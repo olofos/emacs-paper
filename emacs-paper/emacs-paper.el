@@ -69,6 +69,21 @@ Write out the main BibTeX database."
     (setq string (replace-match " " nil t string)))
   string)
 
+(defun ep-alist-insert (key alist val)
+  "Insert (KEY . VAL) into alist, unless there already is an entry for KEY."
+  (unless (assoc key alist)
+    (setcdr (last alist) (cons key val))))
+
+(defun ep-alist-set (key alist val)
+  (let ((field (assoc key alist)))
+    (if field
+        (setcdr field val)
+      (ep-alist-insert key alist val))))
+
+(defun ep-alist-get-value (key alist)
+  (cdr (assoc key alist)))
+
+
 
 ;;; Entry helper functions
 
@@ -193,7 +208,7 @@ The defauly value of FIELD-NAME-IN is \"=key=\"."
       (setcdr (last entries-in) (list entry-in))))
   entries-in)
 
-;;; Main EP interface
+;;; EP buffer formatting
 
 ;; Some formating helper macros
 
@@ -224,55 +239,70 @@ nil. Return t if anything was inserted, otherwise nil."
      nil))
 
 
-(defun ep-ep-format-entry (entry)
+(defun ep-ep-insert-entry (entry)
   "Insert ENTRY nicely fromatted into current buffer."
-  (or (ep-ep-insert-non-nil "(" (ep-field-value "=key=" entry) ")\n")
-      (ep-ep-insert-non-nil (ep-field-value "eprint" entry)  " "
-                            "[" (ep-field-value "primaryClass" entry) "]" "\n")
-      (ep-ep-insert-non-nil " " (ep-field-value "eprint" entry)  "\n"))
+  (let* ((start-point (point)))
+    (or (ep-ep-insert-non-nil (ep-field-value "=key=" entry) "\n")
+        (ep-ep-insert-non-nil (ep-field-value "eprint" entry)  " "
+                              "[" (ep-field-value "primaryClass" entry) "]" "\n")
+        (ep-ep-insert-non-nil " " (ep-field-value "eprint" entry)  "\n"))
+    
+    (ep-ep-insert-non-nil (ep-ep-propertize-non-nil (ep-field-value "title" entry) 'face '(:weight bold :slant italic :height 1.2)) "\n")
+    (ep-ep-insert-non-nil (ep-field-value "author" entry))
 
-  (ep-ep-insert-non-nil (ep-ep-propertize-non-nil (ep-field-value "title" entry) 'face '(:weight bold :slant italic :height 1.2)) "\n")
-  (ep-ep-insert-non-nil (ep-field-value "author" entry) "\n")
-
-  (if (string-equal "JHEP" (ep-field-value "journal" entry))
-      (ep-ep-insert-non-nil (ep-ep-propertize-non-nil (ep-field-value "journal" entry) 'face 'italic ) " " 
-                            (ep-ep-propertize-non-nil 
-                             (ep-ep-concat-non-nil (ep-ep-substring-non-nil (ep-field-value "year" entry) 2)
-                                                   (ep-field-value "volume" entry))
-                             'face 'bold) ", "
+    (when (or (ep-field-value "journal" entry) (and (ep-field-value "=key=" entry) (ep-field-value "eprint" entry)))
+      (insert "\n"))
+    
+    (if (string-equal "JHEP" (ep-field-value "journal" entry))
+        (ep-ep-insert-non-nil (ep-ep-propertize-non-nil (ep-field-value "journal" entry) 'face 'italic ) " " 
+                              (ep-ep-propertize-non-nil 
+                               (ep-ep-concat-non-nil (ep-ep-substring-non-nil (ep-field-value "year" entry) 2)
+                                                     (ep-field-value "volume" entry))
+                               'face 'bold) ", "
+                               (ep-field-value "pages" entry) " "
+                               "(" (ep-field-value "year" entry) ")")
+      (ep-ep-insert-non-nil (ep-ep-propertize-non-nil (ep-field-value "journal" entry) 'face 'italic ) " "
+                            (ep-ep-propertize-non-nil (ep-field-value "volume" entry) 'face 'bold) ", "
                             (ep-field-value "pages" entry) " "
-                            "(" (ep-field-value "year" entry) ")")
-    (ep-ep-insert-non-nil (ep-ep-propertize-non-nil (ep-field-value "journal" entry) 'face 'italic ) " "
-                          (ep-ep-propertize-non-nil (ep-field-value "volume" entry) 'face 'bold) ", "
-                          (ep-field-value "pages" entry) " "
-                          "(" (ep-field-value "year" entry) ")"))
+                            "(" (ep-field-value "year" entry) ")"))
+    
+    (when (ep-field-value "=key=" entry)
+      (when (and (ep-field-value "journal" entry) (ep-field-value "eprint" entry))
+        (insert ", "))
+      (or (ep-ep-insert-non-nil (ep-field-value "eprint" entry)  " "
+                                "[" (ep-field-value "primaryClass" entry) "]")
+          (ep-ep-insert-non-nil " " (ep-field-value "eprint" entry))))
+    (insert ".\n")
 
-  (when (ep-field-value "=key=" entry)
-    (when (and (ep-field-value "journal" entry) (ep-field-value "eprint" entry))
-      (insert ", "))
-    (or (ep-ep-insert-non-nil (ep-field-value "eprint" entry)  " "
-                              "[" (ep-field-value "primaryClass" entry) "]")
-        (ep-ep-insert-non-nil " " (ep-field-value "eprint" entry))))
-  (insert ".\n"))
+    (put-text-property start-point (point) :ep-entry entry)
+    (put-text-property start-point (point) :ep-data (list (cons "entry-start" start-point) (cons "entry-end" (point))))))
+
 
 (defun ep-ep-insert-entries (entries heading)
   (insert (propertize heading 'face '(:weight bold :height 1.5 :underline t)))
   (insert "\n\n")
 
   (dolist (entry ep-entries)
-    (let ((start-point (point)))
-       (ep-ep-format-entry entry)
-       (put-text-property start-point (point) :ep-entry entry)
-       (insert "\n")
-       (dotimes (n 72)
-           (insert (propertize " " 'face '(:strike-through t))))
-       (insert "\n\n"))))
+    (ep-ep-insert-entry entry)
 
+    (insert "\n")
+    (dotimes (n 72)
+      (insert (propertize " " 'face '(:strike-through t))))
+    (insert "\n\n")))
+
+(defvar ep-ep-highlight-overlay nil)
+
+(defun ep-ep-highlight-entry ()
+  (let ((start (ep-alist-get-value "entry-start" (get-text-property (point) :ep-data)))
+        (end (ep-alist-get-value "entry-end" (get-text-property (point) :ep-data))))
+    (move-overlay ep-ep-highlight-overlay start end)))
+
+;;; EP buffer navigation
 
 (defun ep-ep-next-entry ()
   (interactive)
   (let* ((next (next-single-property-change (point) :ep-entry))
-         (next-to-next (next-single-property-change next :ep-entry)))
+         (next-to-next (when next (next-single-property-change next :ep-entry))))
     (cond
      ((and next (get-text-property next :ep-entry))
            (goto-char next))
@@ -282,22 +312,57 @@ nil. Return t if anything was inserted, otherwise nil."
 (defun ep-ep-previous-entry ()
   (interactive)
   (let* ((prev (previous-single-property-change (point) :ep-entry))
-         (prev-to-prev (previous-single-property-change prev :ep-entry)))
+         (prev-to-prev (when prev (previous-single-property-change prev :ep-entry)))
+         (prev-to-prev-to-prev (when prev-to-prev (previous-single-property-change prev-to-prev :ep-entry))))
     (cond
-     ((and prev (get-text-property prev :ep-entry))
-           (goto-char prev))
      ((and prev-to-prev (get-text-property prev-to-prev :ep-entry))
-           (goto-char prev-to-prev)))))
+           (goto-char prev-to-prev))
+     ((and prev-to-prev-to-prev (get-text-property prev-to-prev-to-prev :ep-entry))
+           (goto-char prev-to-prev-to-prev)))))
+
+;;; EP major mode
+
+(defvar ep-ep-current-entry nil)
+
+(defun ep-ep-post-command-hook ()
+  (when ep-ep-current-entry
+    (let ((current-entry (get-text-property (point) :ep-entry)))
+      (when (and current-entry (not (eq current-entry ep-ep-current-entry)))
+        (setq ep-ep-current-entry current-entry)
+        (ep-ep-highlight-entry)
+  ))))
+
+(define-derived-mode ep-ep-mode nil "Emacs Paper references"
+  "Major mode for EP listings.
+\\\{ep-ep-mode-map}"
+
+  (set (make-variable-buffer-local 'ep-ep-current-entry) (get-text-property (point) :ep-entry))
+
+  (set (make-variable-buffer-local 'ep-ep-highlight-overlay) (make-overlay (point) (point)))
+  (overlay-put ep-ep-highlight-overlay 'face '(background-color . "linen"))
+
+  (add-hook (make-variable-buffer-local 'post-command-hook) 'ep-ep-post-command-hook nil t)
+
+  (ep-ep-highlight-entry)
+  )
+
+(define-key ep-ep-mode-map "n" 'ep-ep-next-entry)
+(define-key ep-ep-mode-map "p" 'ep-ep-previous-entry)
+
+
+
+(ep-start)
 
 (progn
   (switch-to-buffer "ep-test")
   (font-lock-mode -1)
   (ep-ep-insert-entries ep-entries "Emacs Paper references")
   (goto-char (point-min))
-  (ep-ep-next-entry))
+  (ep-ep-next-entry)
+  (ep-ep-mode)
+  )
 
 ;;; Connect to the ArXiv 
 
 
 ;;; Connect to Spires
-
