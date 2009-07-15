@@ -8,9 +8,6 @@
 (defvar ep-entries nil
   "List of bibliography entries.")
 
-(defvar ep-entries-changed nil
-  "Set to t if Emacs Paper made any changes to the bibliography entries.")
-
 (defvar ep-bib-fields
   '("author" "title" "journal" "volume" "number" "publisher" "year" "month" 
     "edition" "address" "pages" "eprint" "archivePrefix" "primaryClass"
@@ -18,6 +15,15 @@
   "BibTeX fields saved by Emacs Paper. The fields are inserted in
   the order of appearance in the list."  )
 
+(defvar ep-ep-highlight-overlay nil
+  "Overlay used to highlight the current entry.")
+
+(defvar ep-ep-current-entry nil
+  "The current active entry in the buffer.")
+
+(defcustom ep-arxiv-default-category "hep-th"
+  "Default arXiv category to use when checking for new articles."
+  :type 'string)
 
 ;;; Set up and tear down 
 
@@ -55,8 +61,7 @@ Write out the main BibTeX database."
     )
 
   ;; Unset variables
-  (setq ep-entries nil)
-  (setq ep-entries-changed nil))
+  (setq ep-entries nil))
 
 
 ;;; General helper functions 
@@ -278,7 +283,7 @@ nil. Return t if anything was inserted, otherwise nil."
                               "[" (ep-field-value "primaryClass" entry) "]" "\n")
         (ep-ep-insert-non-nil " " (ep-field-value "eprint" entry)  "\n"))
     
-    (ep-ep-insert-non-nil (ep-ep-propertize-non-nil (ep-field-value "title" entry) 'face '(:weight bold :slant italic :height 1.2)) "\n")
+    (ep-ep-insert-non-nil (ep-ep-propertize-non-nil (ep-field-value "title" entry) 'face '(:weight bold :slant italic :height 1.1)) "\n")
     (ep-ep-insert-non-nil (ep-field-value "author" entry))
 
     (when (or (ep-field-value "year" entry) 
@@ -308,26 +313,39 @@ nil. Return t if anything was inserted, otherwise nil."
           (ep-ep-insert-non-nil (ep-field-value "eprint" entry))))
     (insert ".\n")
 
+    (when (ep-field-value "abstract" entry)
+      (insert "\n")
+      (insert (ep-field-value "abstract" entry)))
+
     (put-text-property start-point (point) :ep-entry entry)))
 
-
-(defun ep-ep-insert-entries (entries heading)
-  "Insert ENTRIES under HEADING in current buffer."
+(defun ep-ep-insert-main-heading (heading)
+  "Insert HEADING in current buffer."
   (toggle-read-only -1)
+  (unless (bobp)
+    (insert "\n"))
   (insert (propertize heading 'face '(:weight bold :height 1.5 :underline t)))
   (insert "\n\n")
+  (toggle-read-only 1))
+
+(defun ep-ep-insert-sub-heading (heading)
+  "Insert HEADING in current buffer."
+  (toggle-read-only -1)
+  (unless (bobp)
+    (insert "\n"))
+  (insert (propertize heading 'face '(:weight bold :height 1.2 :underline t)))
+  (insert "\n\n")
+  (toggle-read-only 1))
+
+(defun ep-ep-insert-entries (entries)
+  "Insert ENTRIES in current buffer."
+  (toggle-read-only -1)
 
   (dolist (entry entries)
     (ep-ep-insert-entry entry)
-
-    (insert "\n")
-    (dotimes (n 72)
-      (insert (propertize " " 'face '(:strike-through t))))
-    (insert "\n\n"))
+    (insert "\n"))
   (toggle-read-only 1))
 
-(defvar ep-ep-highlight-overlay nil)
-(defvar ep-ep-current-entry nil)
 
 (defun ep-ep-highlight-entry ()
   (setq ep-ep-current-entry (get-text-property (point) :ep-entry))
@@ -340,20 +358,24 @@ nil. Return t if anything was inserted, otherwise nil."
 ;;; EP buffer navigation
 
 (defun ep-ep-next-entry ()
-  (interactive)
+  "Move point to the beginning of the next entry and return
+`point'. If the current entry is the last one in the buffer,
+leave `point' unchanged and return nil."
   (let* ((next (next-single-property-change (point) :ep-entry))
          (next-to-next (when next (next-single-property-change next :ep-entry))))
     (cond
      ((and next (get-text-property next :ep-entry))
-           (goto-char next) 
-           (point))
+      (goto-char next) 
+      (point))
      ((and next-to-next (get-text-property next-to-next :ep-entry))
-           (goto-char next-to-next)
-           (point))
+      (goto-char next-to-next)
+      (point))
      (t nil))))
 
 (defun ep-ep-previous-entry ()
-  (interactive)
+  "Move point to the beginning of the previous entry and return
+`point'. If the current entry is the first one in the buffer,
+leave `point' unchanged and return nil."
   (let* ((prev (previous-single-property-change (point) :ep-entry))
          (prev-to-prev (when prev (previous-single-property-change prev :ep-entry)))
          (prev-to-prev-to-prev (when prev-to-prev (previous-single-property-change prev-to-prev :ep-entry))))
@@ -365,6 +387,39 @@ nil. Return t if anything was inserted, otherwise nil."
            (goto-char prev-to-prev-to-prev)
            (point))
      (t nil))))
+
+(defun ep-ep-next-entry-recenter ()
+  "Move point to the beginning of the next entry. If the current
+entry is the last one in the buffer, leave `point' unchanged. If
+the new entry does not fit in the window, recenter point."
+  (interactive)
+  (when (ep-ep-next-entry)
+    (let* ((entry (get-text-property (point) :ep-entry))
+           (boundaries (ep-ep-entry-boundaries entry))
+           (start (car boundaries))
+           (end (cdr boundaries)))
+      (unless (and (pos-visible-in-window-p start) (pos-visible-in-window-p end))
+        (let* ((start-line (line-number-at-pos start))
+               (end-line (line-number-at-pos end))
+               (center-line (/ (window-height) 2)))
+          (recenter (max 0 (- center-line (/ (- end-line start-line) 2)))))))))
+
+(defun ep-ep-previous-entry-recenter ()
+  "Move point to the beginning of the previous entry. If the
+current entry is the first one in the buffer, leave `point'
+unchanged. If the new entry does not fit in the window, recenter
+point."
+  (interactive)
+  (when (ep-ep-previous-entry)
+    (let* ((entry (get-text-property (point) :ep-entry))
+           (boundaries (ep-ep-entry-boundaries entry))
+           (start (car boundaries))
+           (end (cdr boundaries)))
+      (unless (and (pos-visible-in-window-p start) (pos-visible-in-window-p end))
+        (let* ((start-line (line-number-at-pos start))
+               (end-line (line-number-at-pos end))
+               (center-line (/ (window-height) 2)))
+          (recenter (max 0 (- center-line (/ (- end-line start-line) 2)))))))))
 
 (defun ep-ep-entry-boundaries (entry)
   (save-excursion
@@ -394,14 +449,14 @@ nil. Return t if anything was inserted, otherwise nil."
   (make-variable-buffer-local 'ep-ep-current-entry)
 
   (set (make-variable-buffer-local 'ep-ep-highlight-overlay) (make-overlay (point) (point)))
-  (overlay-put ep-ep-highlight-overlay 'face '(background-color . "linen"))
+  (overlay-put ep-ep-highlight-overlay 'face '(background-color . "honeydew"))
 
   (add-hook (make-variable-buffer-local 'post-command-hook) 'ep-ep-post-command-hook nil t)
 
   (ep-ep-highlight-entry))
 
-(define-key ep-ep-mode-map "n" 'ep-ep-next-entry)
-(define-key ep-ep-mode-map "p" 'ep-ep-previous-entry)
+(define-key ep-ep-mode-map "n" 'ep-ep-next-entry-recenter)
+(define-key ep-ep-mode-map "p" 'ep-ep-previous-entry-recenter)
 
 (defun ep-ep-main ()
   "Set up main Emacs Paper reference buffer."
@@ -409,7 +464,8 @@ nil. Return t if anything was inserted, otherwise nil."
   (switch-to-buffer "EP-main")
   (toggle-read-only -1)
   (erase-buffer)
-  (ep-ep-insert-entries ep-entries "Emacs Paper references")
+  (ep-ep-insert-main-heading "Emacs Paper references")
+  (ep-ep-insert-entries ep-entries)
   (goto-char (point-min))
   (ep-ep-next-entry)
   (ep-ep-mode))
@@ -466,8 +522,130 @@ NEW-ENTRY."
 
     new-entry))
 
-;;; Connect to the ArXiv 
+;;; Connect to the arXiv 
 
+(defun ep-arxiv-parse-atom-buffer (buffer)
+  (let ((entry-list nil))
+    (save-excursion
+      (set-buffer buffer)
+      
+      (let* ((root (xml-parse-region (point-min) (point-max)))
+             (feed (car root)))
+        (dolist (entry (xml-get-children feed 'entry))
+          (let* ((title-node (car (xml-get-children entry 'title)))
+                 (summary-node (car (xml-get-children entry 'summary)))
+                 (id-node (car (xml-get-children entry 'id)))
+                 (category-node (car (xml-get-children entry 'category)))
+                 (title (car (xml-node-children title-node)))
+                 (summary (car (xml-node-children summary-node)))
+                 (id (car (xml-node-children id-node)))
+                 (category (xml-get-attribute category-node 'term))
+                 (author-list nil)
+                 (author ""))
+            (dolist (author-node (xml-get-children entry 'author))
+              (setq author-list (append (cddar (xml-get-children author-node 'name))
+                                        author-list)))
+
+            (while author-list
+              (case (length author-list)
+                (1 (setq author (concat author (car author-list))))
+                (2 (setq author (concat author (car author-list) " and ")))
+                (t (setq author (concat author (car author-list) " and " ))))
+              (setq author-list (cdr author-list)))
+
+            (if (string-equal (substring id 0 21) "http://arxiv.org/abs/")
+                (setq id (substring id 21)))
+            (if (string-equal (substring id -2 -1) "v")
+                (setq id (substring id 0 -2)))
+
+            (setq entry-list (append entry-list
+                                     (list (list (cons "eprint" id) 
+                                                 (cons "author" author) 
+                                                 (cons "title" title) 
+                                                 (cons "abstract" summary) 
+                                                 (cons "primaryClass" category)))))))))
+    entry-list))
+
+(defun ep-arxiv-id-query (id-list)
+  "Query the arxiv for the articles with identifiers in ID-LIST,
+a list of strings. Returns a list of entries."
+  (when id-list
+    (save-excursion
+      (let* ((id-string (mapconcat 'identity id-list ","))
+             (url (concat "http://export.arxiv.org/api/query?id_list="
+                          id-string "&start=0&max_results=" 
+                          (number-to-string (length id-list))))
+             (res-buf (url-retrieve-synchronously url))
+             entries)
+        (set-buffer res-buf)
+        (goto-char (point-min))
+        (search-forward "<?xml")
+        (beginning-of-line)
+        (delete-region (point-min) (point))
+        (setq entries (ep-arxiv-parse-atom-buffer res-buf))
+        (kill-buffer res-buf)
+        entries))))
+
+(defun ep-arxiv-get-new-ids (category)
+  "Retrive new entries from the arXiv for CATEGORY. Returns a
+tripplet with three lists of article identifiers, corresponding
+to new, cross listed and updated articles."
+  (let* ((res-buf (url-retrieve-synchronously (concat "http://export.arxiv.org/rss/" category)))
+         (title-list (save-excursion
+                       (set-buffer res-buf)
+                       (let* ((root (xml-parse-region (point-min) (point-max)))
+                              (rdf-node (car root))
+                              (items (xml-get-children rdf-node 'item))
+                              title-list)
+                         (dolist (item items)
+                           (let* ((title-node (car (xml-get-children item 'title)))
+                                  (title (xml-node-children title-node)))
+                             (setq title-list (append title-list title))))
+                         title-list)))
+         new-list
+         cross-list
+         updated-list)
+    (kill-buffer res-buf)
+    (with-temp-buffer
+      (dolist (title title-list)
+        (erase-buffer)
+        (insert title)
+        (search-backward-regexp "(arXiv:\\([^ ]*\\) \\[\\([^]]*\\)\\]\\([^)]*\\))")
+        (cond ((string-equal (match-string 3) " CROSS LISTED")
+               (setq cross-list (cons (match-string 1) cross-list)))
+              ((string-equal (match-string 3) " UPDATED")
+               (setq updated-list (cons (match-string 1) updated-list)))
+              (t
+               (setq new-list (cons (match-string 1) new-list))))))
+
+    (list new-list cross-list updated-list)))
+
+
+(defun ep-check-arxiv (category) 
+  "Show new entries at the arXiv for CATEGORY."
+  (interactive
+   (list (read-string (concat "arXiv category [" ep-arxiv-default-category "]: ") nil nil "hep-th")))
+                            
+  (let* ((ids (ep-arxiv-get-new-ids category))
+         (entries-new (ep-arxiv-id-query (car ids)))
+         (entries-cross-listed (ep-arxiv-id-query (cadr ids)))
+         (entries-updated (ep-arxiv-id-query (caddr ids))))
+
+    (if (not entries-new)
+        (message "No new arXiv entries in %s" category)
+
+      (switch-to-buffer (generate-new-buffer (concat "EP arXiv: " category)))
+      (ep-ep-insert-main-heading (concat "New arXiv entries for category " category))
+      (ep-ep-insert-entries entries-new)
+
+      (ep-ep-insert-sub-heading "Cross listed entries")
+      (ep-ep-insert-entries entries-cross-listed)
+
+      (ep-ep-insert-sub-heading  "Updated entries")
+      (ep-ep-insert-entries entries-updated)
+      (goto-char (point-min))
+      (ep-ep-next-entry)
+      (ep-ep-mode))))
 
 ;;; Connect to Spires
 
@@ -519,15 +697,18 @@ NEW-ENTRY."
     entries))
 
 (defun ep-spires-query (query)
+  "Search for QUERY on Spires and desplay the result in a new
+Emacs Paper buffer."
+  (interactive "sSpires query:")
   (let ((entries (ep-spires-query-entries (ep-spires-guess-query query))))
     (if (not entries)
         (message "No entries found for query %s" query)
     (switch-to-buffer (generate-new-buffer "EP Spires query"))
-    (ep-ep-insert-entries entries (concat "Spires results for query \"" query "\""))
+    (ep-ep-insert-sub-heading (concat "Spires results for query \"" query "\""))
+    (ep-ep-insert-entries entries )
     (goto-char (point-min))
     (ep-ep-next-entry)
     (ep-ep-mode))))
-
 
 (defun ep-spires-update-current-entry ()
   "Update the current entry by getting any mssing fields from
