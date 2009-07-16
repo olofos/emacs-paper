@@ -1,3 +1,8 @@
+;;;; Emacs Paper
+;; 
+;; Emacs paper for managing references
+
+
 ;;; Set up variables
 (defcustom ep-main-bib-file 
 ;;  "c:/Users/Olof/Documents/Jobb/Notes/References/refs.bib"
@@ -33,8 +38,7 @@
         (message "No BibTeX entries found in %s" file)
       (ep-ep-new-buffer (concat "EP " (file-name-nondirectory file))
         (ep-ep-insert-main-heading (concat "Emacs Paper -- " (file-name-nondirectory file)))
-        (ep-ep-insert-entries entries)
-        (setq buffer-filename))
+        (ep-ep-format-entries entries)))
     (kill-buffer file-buf)))
 
 
@@ -82,7 +86,6 @@ not exist."
     (setcdr field nil)))
 
 
-
 ;;; Entry helper functions
 
 (defun ep-field-value (field-name entry)
@@ -119,10 +122,10 @@ parsed entries."
   "Save the BibTeX ENTRIES to FILE."
   (save-current-buffer
     (find-file file)
-    (ep-bib-insert-entries entries)
+    (ep-bib-format-entries entries)
     (save-buffer)))
 
-(defun ep-bib-insert-entries (entries)
+(defun ep-bib-format-entries (entries)
   "Write ENTRIES as BibTeX entries to current buffer.
 
 Warning: the buffer will be erased before the entries are
@@ -138,24 +141,22 @@ The file is not saved."
                  )
       (erase-buffer)
       (insert "This file was ceated by Emacs Paper.\n\n")
-      (ep-bib-insert-entries entries)
-;;      (insert "%% Local Variables:\n%% mode: fundamental\n%% End:\n")
+      (ep-bib-format-entries entries)
       (setq did-write t))
     did-write))
 
-(defun ep-bib-insert-entries (entries)
+(defun ep-bib-format-entries (entries)
   "Insert ENTRIES into current buffer."
   (let ((progress (make-progress-reporter "Insering entries..." 0 (length entries)))
         (counter 0))
     (dolist (entry entries)
-      (ep-bib-insert-entry entry)
+      (ep-bib-format-entry entry)
       (setq counter (+ 1 counter))
       (progress-reporter-update progress counter)
       (insert "\n\n"))
     (progress-reporter-done progress)))
 
-
-(defun ep-bib-insert-entry (entry)
+(defun ep-bib-format-entry (entry)
   "Insert ENTRY in current buffer."
   (insert "@" (ep-field-value "=type=" entry) (bibtex-entry-left-delimiter))
   (insert (ep-field-value "=key=" entry))
@@ -166,49 +167,9 @@ The file is not saved."
   (insert "\n")
   (insert (bibtex-entry-right-delimiter)))
 
-
-;;; Inserting, finding and merging entries
-
-(defun ep-find-entry (entry-in entries-in &optional field-name-in)
-  (let* ((field-name (if field-name-in 
-                         field-name-in
-                       "=key="))
-         (key (ep-field-value field-name entry-in))
-         (entries entries-in)
-        found-entry)
-    (while (and entries (not found-entry))
-      (let ((entry (pop entries)))
-        (when (string-equal key (ep-field-value field-name entry))
-          (setq found-entry entry))))
-    found-entry))
-
-(defun ep-merge-entry (entry-a entry-b)
-  "Add in place any undefined fields from ENTRY-B to
-ENTRY-A. Return the merged entry."
-  (dolist (field entry-b)
-;; OBS: not tested!
-    (ep-alist-insert (car field) entry-a (cdr field)))
-;;    (unless (assoc (car field) entry-a)
-;;      (setcdr (last entry-a) (list field))))
-  entry-a)
-
-(defun ep-insert-entry (entry-in entries-in &optional field-name-in)
-  "If an entry with an equal field value for FIELD-NAME-IN exists
-in ENTRIES-IN, ENTRY-IN is merged to it. Otherwise, ENTRY-IN will
-is added to the end of ENTRIES-IN.
-
-The defauly value of FIELD-NAME-IN is \"=key=\"."
-  (unless entries-in
-    (error "FIELD-NAME-IN should not be empty"))
-  (let ((entry (ep-find-entry entry-in entries-in field-name-in)))
-    (if entry
-        (ep-merge-entry entry entry-in)
-      (setcdr (last entries-in) (list entry-in))))
-  entries-in)
-
 ;;; EP buffer formatting
 
-;; Some formating helper macros
+;; Some formatting helper macros
 
 (defmacro ep-ep-insert-non-nil (&rest args)
   "Insert ARGS into buffer unless any of the arguments are
@@ -236,16 +197,20 @@ nil. Return t if anything was inserted, otherwise nil."
        (substring ,string ,from ,to)
      nil))
 
+;; Entry formatting
 
-(defun ep-ep-insert-entry (entry)
+(defun ep-ep-format-entry (entry)
   "Insert ENTRY nicely fromatted into current buffer."
-  (let* ((start-point (point)))
+  (insert "\n")
+  (let* ((start (point)))
     (or (ep-ep-insert-non-nil (ep-field-value "=key=" entry) "\n")
         (ep-ep-insert-non-nil (ep-field-value "eprint" entry)  " "
                               "[" (ep-field-value "primaryClass" entry) "]" "\n")
         (ep-ep-insert-non-nil " " (ep-field-value "eprint" entry)  "\n"))
     
-    (ep-ep-insert-non-nil (ep-ep-propertize-non-nil (ep-field-value "title" entry) 'face '(:weight bold :slant italic :height 1.1)) "\n")
+    (ep-ep-insert-non-nil (ep-ep-propertize-non-nil 
+                           (ep-field-value "title" entry) 
+                           'face '(:weight bold :slant italic :height 1.1)) "\n")
     (ep-ep-insert-non-nil (ep-field-value "author" entry))
 
     (when (or (ep-field-value "year" entry) 
@@ -254,14 +219,18 @@ nil. Return t if anything was inserted, otherwise nil."
       (insert "\n"))
     
     (if (string-equal "JHEP" (ep-field-value "journal" entry))
-        (ep-ep-insert-non-nil (ep-ep-propertize-non-nil (ep-field-value "journal" entry) 'face 'italic ) " " 
-                              (ep-ep-propertize-non-nil 
-                               (ep-ep-concat-non-nil (ep-ep-substring-non-nil (ep-field-value "year" entry) 2)
-                                                     (ep-field-value "volume" entry))
-                               'face 'bold) ", "
+        (ep-ep-insert-non-nil (ep-ep-propertize-non-nil 
+                               (ep-field-value "journal" entry) 'face 'italic ) " " 
+                               (ep-ep-propertize-non-nil 
+                                (ep-ep-concat-non-nil 
+                                 (ep-ep-substring-non-nil (ep-field-value "year" entry) 2)
+                                 (ep-field-value "volume" entry))
+                                'face 'bold) ", "
                                (ep-field-value "pages" entry) " ")
-      (ep-ep-insert-non-nil (ep-ep-propertize-non-nil (ep-field-value "journal" entry) 'face 'italic ) " "
-                            (ep-ep-propertize-non-nil (ep-field-value "volume" entry) 'face 'bold) ", "
+      (ep-ep-insert-non-nil (ep-ep-propertize-non-nil (ep-field-value "journal" entry) 
+                                                      'face 'italic ) " "
+                            (ep-ep-propertize-non-nil (ep-field-value "volume" entry) 
+                                                      'face 'bold) ", "
                             (ep-field-value "pages" entry) " "))
     (ep-ep-insert-non-nil "(" (ep-field-value "year" entry) ")")
     
@@ -278,44 +247,33 @@ nil. Return t if anything was inserted, otherwise nil."
     (when (ep-field-value "abstract" entry)
       (insert "\n")
       (insert (ep-field-value "abstract" entry)))
+    
+    (put-text-property start (point) :ep-entry entry)
+;;    (insert "\n")
+    ))
 
-    (put-text-property start-point (point) :ep-entry entry)))
+(defun ep-ep-format-entries (entries)
+  "Insert ENTRIES in current buffer."
+  (dolist (entry entries)
+    (ep-ep-format-entry entry)))
 
 (defun ep-ep-insert-main-heading (heading)
   "Insert HEADING in current buffer."
-  (unless (bobp)
-    (insert "\n"))
-  (insert (propertize heading 'face '(:weight bold :height 1.5 :underline t)))
-  (insert "\n\n"))
+  (let ((start (point)))
+    (unless (bobp)
+      (insert "\n"))
+    (insert (propertize heading  'face '(:weight bold :height 1.5 :underline t)))
+    (insert "\n")
+    (put-text-property start (point) :ep-heading t)))
 
 (defun ep-ep-insert-sub-heading (heading)
   "Insert HEADING in current buffer."
-  (unless (bobp)
-    (insert "\n"))
-  (insert (propertize heading 'face '(:weight bold :height 1.2 :underline t)))
-  (insert "\n\n"))
-
-(defun ep-ep-insert-entries (entries)
-  "Insert ENTRIES in current buffer."
-  (dolist (entry entries)
-    (ep-ep-insert-entry entry)
-    (insert "\n")))
-
-(defun ep-ep-highlight-entry ()
-  (setq ep-ep-current-entry (ep-ep-entry-at-point))
-  (let* ((boundaries (ep-ep-entry-boundaries ep-ep-current-entry))
-         (start (car boundaries))
-         (end (cdr boundaries)))
-    (move-overlay ep-ep-highlight-overlay start end)
-
-    (let* ((query (or (ep-alist-get-value "=key=" ep-ep-current-entry)
-                      (ep-alist-get-value "eprint" ep-ep-current-entry)
-                      (ep-ep-concat-non-nil "A " (ep-alist-get-value "author" ep-ep-current-entry))))
-           (url (if query 
-                    (url-generic-parse-url (ep-spires-url (ep-spires-guess-query query)))
-                  "")))
-      (setq url-current-object url))))
-
+  (let ((start (point)))
+    (unless (bobp)
+      (insert "\n"))
+    (insert (propertize heading 'face '(:weight bold :height 1.2 :underline t)))
+    (insert "\n")
+    (put-text-property start (point) :ep-heading t)))
 
 ;;; EP buffer navigation
 
@@ -326,10 +284,10 @@ leave `point' unchanged and return nil."
   (let* ((next (next-single-property-change (point) :ep-entry))
          (next-to-next (when next (next-single-property-change next :ep-entry))))
     (cond
-     ((and next (get-text-property next :ep-entry))
+     ((and next (ep-ep-entry-at-point next))
       (goto-char next) 
       (point))
-     ((and next-to-next (get-text-property next-to-next :ep-entry))
+     ((and next-to-next (ep-ep-entry-at-point next-to-next))
       (goto-char next-to-next)
       (point))
      (t nil))))
@@ -342,10 +300,10 @@ leave `point' unchanged and return nil."
          (prev-to-prev (when prev (previous-single-property-change prev :ep-entry)))
          (prev-to-prev-to-prev (when prev-to-prev (previous-single-property-change prev-to-prev :ep-entry))))
     (cond
-     ((and prev-to-prev (get-text-property prev-to-prev :ep-entry))
+     ((and prev-to-prev (ep-ep-entry-at-point prev-to-prev))
            (goto-char prev-to-prev)
            (point))
-     ((and prev-to-prev-to-prev (get-text-property prev-to-prev-to-prev :ep-entry))
+     ((and prev-to-prev-to-prev (ep-ep-entry-at-point prev-to-prev-to-prev))
            (goto-char prev-to-prev-to-prev)
            (point))
      (t nil))))
@@ -383,23 +341,82 @@ point."
                (center-line (/ (window-height) 2)))
           (recenter (max 0 (- center-line (/ (- end-line start-line) 2)))))))))
 
+(defun ep-ep-section-entries-boundaries ()
+  (let* ((next (next-single-property-change (point) :ep-heading))
+         (prev (previous-single-property-change (point) :ep-heading))
+         (start (cond 
+                 ((get-text-property (point) :ep-heading)
+                  next)
+                 (prev
+                  prev)
+                 ((get-text-property (- (point) 1) :ep-heading)
+                  (point))
+                 (t
+                  (point-min))))
+         (end (next-single-property-change start :ep-heading)))
+    (unless end
+      (setq end (point-max)))
+    (cons start  end)))
+
+(defun ep-ep-redraw-entries ()
+  (interactive)
+
+  (let ((current-entry ep-ep-current-entry))
+    (goto-char (point-min))
+    (toggle-read-only -1)
+    (while (get-text-property (point) :ep-heading)
+      (let* ((boundaries (ep-ep-section-entries-boundaries))
+             (start (car boundaries))
+             (end (cdr boundaries)))
+        (narrow-to-region start end)
+        (let ((entries (ep-ep-extract-entries)))
+          (delete-region start end)
+          (ep-ep-format-entries entries))
+        (widen)))
+    (toggle-read-only 1)
+    (goto-char (car (ep-ep-entry-boundaries current-entry)))
+    (ep-ep-highlight-entry)))
+
+(defun ep-ep-erase-section-entries ()
+  (interactive)
+  (let* ((boundaries (ep-ep-section-entries-boundaries))
+         (start (car boundaries))
+         (end (cdr boundaries)))
+    (toggle-read-only -1)
+    (delete-region start end)))
+
 (defun ep-ep-entry-boundaries (entry)
+  "Return the start and end point of ENTRY in a cons cell
+as (START . END)."
   (save-excursion
     (let (found-entry)
       (goto-char (point-min))
+      (if (eq entry (ep-ep-entry-at-point))
+          (setq found-entry t))
       (while (and (not found-entry) (ep-ep-next-entry))
         (when (eq entry (ep-ep-entry-at-point))
           (setq found-entry t)))
       (if (not found-entry)
           nil
-        (cons (point) (next-single-property-change (point) :ep-entry))))))
+        (cons (point)
+              (or (next-single-property-change (point) :ep-entry)
+                  (point-max)))))))
 
 ;;; EP major mode
 
+(defun ep-ep-highlight-entry ()
+  "Highlight the entry at `point' and make it the current entry."
+  (setq ep-ep-current-entry (ep-ep-entry-at-point))
+  (let* ((boundaries (ep-ep-entry-boundaries ep-ep-current-entry))
+         (start (car boundaries))
+         (end (cdr boundaries)))
+    (move-overlay ep-ep-highlight-overlay start end)))
+
 (defun ep-ep-post-command-hook ()
+  "Make sure that the entry at `point' is highlighted." 
   (when ep-ep-current-entry
-    (let ((current-entry (ep-ep-entry-at-point)))
-      (when (and current-entry (not (eq current-entry ep-ep-current-entry)))
+    (let ((entry (ep-ep-entry-at-point)))
+      (when (and entry (not (eq entry ep-ep-current-entry)))
         (ep-ep-highlight-entry)))))
 
 (define-derived-mode ep-ep-mode nil "Emacs Paper references"
@@ -411,7 +428,8 @@ point."
   (make-variable-buffer-local 'ep-ep-current-entry)
 
   (set (make-variable-buffer-local 'ep-ep-highlight-overlay) (make-overlay (point) (point)))
-  (overlay-put ep-ep-highlight-overlay 'face '(background-color . "honeydew"))
+;;  (overlay-put ep-ep-highlight-overlay 'face '(background-color . "honeydew"))
+  (overlay-put ep-ep-highlight-overlay 'face '(background-color . "gray10"))
 
   (add-hook (make-variable-buffer-local 'post-command-hook) 'ep-ep-post-command-hook nil t)
 
@@ -425,6 +443,34 @@ point."
 \\\{ep-ep-edit-mode-map}")
 
 (define-key ep-ep-edit-mode-map "\C-c\C-c" 'ep-ep-edit-done)
+
+(defmacro ep-ep-new-buffer (name &rest body)
+  `(progn
+     (switch-to-buffer (generate-new-buffer ,name))
+     (progn ,@body)
+     (set-buffer-modified-p nil)
+     (toggle-read-only 1)
+     (goto-char (point-min))
+     (ep-ep-next-entry)
+     (ep-ep-mode)))
+
+(defun ep-ep-entry-at-point (&optional point)
+  "Return the entry at POINT. If POINT is nil, use `point;"
+  (let ((point (if point
+                   point
+                 (point))))
+    (get-text-property point :ep-entry)))
+
+(defun ep-ep-extract-entries (&optional buffer)
+  (if buffer
+      (set-buffer buffer))
+  (goto-char (point-min))
+  (let (entries)
+    (while (ep-ep-next-entry)
+      (push (ep-ep-entry-at-point) entries))
+    (nreverse entries)))
+
+;; Entry editing
 
 (defun ep-ep-update-entry (entry &optional new-entry)
   "Redraw ENTRY. If NEW-ENTRY is non-nil, first replace ENTRY by
@@ -440,7 +486,7 @@ NEW-ENTRY."
     (toggle-read-only -1)
     (goto-char start)
     (delete-region start end)
-    (ep-ep-insert-entry entry)
+    (ep-ep-format-entry entry)
     (goto-char start)
     (toggle-read-only 1)))
 
@@ -449,11 +495,15 @@ NEW-ENTRY."
   (interactive)
   (throw 'ep-edit-quit t))
 
-(defun ep-ep-edit-current-entry ()
+(defun ep-edit-entry (&optional entry)
   (interactive)
-  (let ((new-entry (ep-ep-edit-entry ep-ep-current-entry)))
-    (ep-ep-update-entry ep-ep-current-entry new-entry)
-    (ep-ep-highlight-entry)))
+  (let* ((entry  (if entry
+                     entry
+                   ep-ep-current-entry))
+         (new-entry (ep-ep-edit-entry entry)))
+    (ep-ep-update-entry entry new-entry)
+    (when (eq entry ep-ep-current-entry)
+      (ep-ep-highlight-entry))))
 
 (defun ep-ep-edit-entry (entry)
   "Edit ENTRY as a BibTeX entry. Return the new entry."
@@ -461,7 +511,7 @@ NEW-ENTRY."
     (let ((edit-buffer (generate-new-buffer "EP edit entry"))
           new-entry)
       (switch-to-buffer edit-buffer)
-      (ep-bib-insert-entry entry)
+      (ep-bib-format-entry entry)
       (goto-char 0)
       (ep-ep-edit-mode)
       (catch 'ep-edit-quit
@@ -470,30 +520,10 @@ NEW-ENTRY."
       (kill-buffer edit-buffer)
       new-entry)))
 
-(defun ep-ep-entry-at-point ()
-  "Return the entry at `point'."
-  (get-text-property (point) :ep-entry))
-
-(defun ep-ep-extract-entries (buffer)
-  (set-buffer buffer)
-  (goto-char (point-min))
-  (let (entries)
-    (while (ep-ep-next-entry)
-      (push (ep-ep-entry-at-point) entries))
-    (nreverse entries)))
-
-(defmacro ep-ep-new-buffer (name &rest body)
-  `(progn
-     (switch-to-buffer (generate-new-buffer ,name))
-     (progn ,@body)
-     (toggle-read-only 1)
-     (goto-char (point-min))
-     (ep-ep-next-entry)
-     (ep-ep-mode)))
-
 ;;; Find entry online
 
-(defun ep-ep-goto-arxiv-abstract ()
+(defun ep-goto-arxiv-abstract ()
+  "Go to the arXiv abstract page of the current entry."
   (interactive)
   (let* ((entry ep-ep-current-entry)
          (url (ep-ep-concat-non-nil "http://arxiv.org/abs/" (ep-alist-get-value "eprint" entry))))
@@ -502,8 +532,8 @@ NEW-ENTRY."
       (message "There is no preprint number for this entry. Trying at Spires.")
       (ep-ep-goto-spires-entry))))
 
-
-(defun ep-ep-goto-arxiv-pdf ()
+(defun ep-goto-arxiv-pdf ()
+  "Go to the arXiv PDF of the current entry."
   (interactive)
   (let* ((entry ep-ep-current-entry)
          (url (ep-ep-concat-non-nil "http://arxiv.org/pdf/" (ep-alist-get-value "eprint" entry))))
@@ -512,8 +542,8 @@ NEW-ENTRY."
       (message "There is no preprint number for this entry. Trying using DOI.")
       (ep-ep-goto-doi))))
 
-
-(defun ep-ep-goto-spires ()
+(defun ep-goto-spires ()
+  "Go to the Spires record of the current entry."
   (interactive)
   (let* ((entry ep-ep-current-entry)
          (query (or (ep-alist-get-value "=key=" entry)
@@ -523,9 +553,9 @@ NEW-ENTRY."
         (browse-url url)
       (message "There is no preprint number for this entry. Trying using DOI.")
       (ep-ep-goto-doi))))
-    
-
-(defun ep-ep-goto-doi ()
+ 
+(defun ep-goto-doi ()
+  "Follow the DOI of the current entry."
   (interactive)
   (let* ((entry ep-ep-current-entry)
          (url (ep-ep-concat-non-nil "http://dx.doi.org/" (ep-alist-get-value "doi" entry))))
@@ -633,10 +663,29 @@ to new, cross listed and updated articles."
     (list new-list cross-list updated-list)))
 
 
+(defun ep-arxiv-update-entry (&optional entry)
+  "Update `entry' by getting any missing fields from
+arXiv."
+  (interactive)
+  (let* ((entry (if entry
+                    entry
+                  ep-ep-current-entry))
+         (eprint (ep-alist-get-value "eprint" entry))
+         (arxiv-entry (when eprint (car (ep-arxiv-id-query (list eprint))))))
+    (cond 
+     ((not eprint) (message "%s" "The current entry has no preprint number"))
+     (t
+      (dolist (field arxiv-entry)
+        (ep-alist-insert (car field) entry (cdr field)))
+      (ep-ep-update-entry entry)
+      (when (eq entry ep-ep-current-entry)
+        (ep-ep-highlight-entry))))))
+
 (defun ep-check-arxiv (category) 
   "Show new entries at the arXiv for CATEGORY."
   (interactive
-   (list (read-string (concat "arXiv category [" ep-arxiv-default-category "]: ") nil nil "hep-th")))
+   (list (read-string (concat "arXiv category [" ep-arxiv-default-category "]: ") 
+                      nil nil "hep-th")))
                             
   (let* ((ids (ep-arxiv-get-new-ids category))
          (entries-new (ep-arxiv-id-query (car ids)))
@@ -648,13 +697,13 @@ to new, cross listed and updated articles."
 
       (ep-ep-new-buffer (concat "EP arXiv: " category)
         (ep-ep-insert-main-heading (concat "New arXiv entries for category " category))
-        (ep-ep-insert-entries entries-new)
+        (ep-ep-format-entries entries-new)
 
         (ep-ep-insert-sub-heading "Cross listed entries")
-        (ep-ep-insert-entries entries-cross-listed)
+        (ep-ep-format-entries entries-cross-listed)
 
         (ep-ep-insert-sub-heading  "Updated entries")
-        (ep-ep-insert-entries entries-updated)))))
+        (ep-ep-format-entries entries-updated)))))
 
 ;;; Connect to Spires
 
@@ -712,22 +761,28 @@ Emacs Paper buffer."
     (if (not entries)
         (message "No entries found for query %s" query)
 
-    (ep-ep-new-buffer "EP Spires query")
+    (ep-ep-new-buffer "EP Spires query"
       (ep-ep-insert-sub-heading (concat "Spires results for query \"" query "\""))
-      (ep-ep-insert-entries entries))))
+      (ep-ep-format-entries entries)))))
 
-(defun ep-spires-update-current-entry ()
-  "Update the current entry by getting any mssing fields from
+(defun ep-spires-update-entry (&optional entry)
+  "Update `entry' by getting any missing fields from
 Spires."
   (interactive)
-  (let* ((query (or(ep-alist-get-value "=key=" ep-ep-current-entry)
-                   (ep-alist-get-value "eprint" ep-ep-current-entry)))
-         (entry (when query (car (ep-spires-query-entries (ep-spires-guess-query query))))))
+  (let* ((entry (if entry
+                    entry
+                  ep-ep-current-entry))
+         (query (or(ep-alist-get-value "=key=" entry)
+                   (ep-alist-get-value "eprint" entry)))
+         (spires-entry (when query 
+                         (car (ep-spires-query-entries (ep-spires-guess-query query))))))
     (cond 
      ((not query) (message "%s" "The current entry has no key and no preprint number"))
-     ((not entry) (message "%s" "The current entry was not found on Spires"))
+     ((not spires-entry) (message "%s" "The current entry was not found on Spires"))
      (t
-      (dolist (field entry)
-        (ep-alist-insert (car field) ep-ep-current-entry (cdr field)))
-      (ep-ep-update-entry ep-ep-current-entry)
-      (ep-ep-highlight-entry)))))
+      (dolist (field spires-entry)
+        (ep-alist-insert (car field) entry (cdr field)))
+      (ep-ep-update-entry entry)
+      (when (eq entry ep-ep-current-entry)
+        (ep-ep-highlight-entry))))))
+
