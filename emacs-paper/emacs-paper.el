@@ -5,9 +5,6 @@
   "Main BibTeX database used by Emacs Paper."
   :type 'string)
 
-(defvar ep-entries nil
-  "List of bibliography entries.")
-
 (defvar ep-bib-fields
   '("author" "title" "journal" "volume" "number" "publisher" "year" "month" 
     "edition" "address" "pages" "eprint" "archivePrefix" "primaryClass"
@@ -27,41 +24,18 @@
 
 ;;; Set up and tear down 
 
-(defun ep-start ()
-  "Start Emacs Paper.
+(defun ep-bib-load-file (file)
+  (interactive "FLoad BibTeX file:")
 
-Read in the main BibTeX database."
-  (interactive)
-
-  (when (vc-backend ep-main-bib-file)
-    ;; TODO: make sure file is up to date...
-    )
-
-  (setq ep-entries (ep-bib-parse-file ep-main-bib-file))
-
-  (ep-ep-main))
-
-(defun ep-stop ()
-  "Stops Emacs Paper.
-
-Write out the main BibTeX database."
-  (interactive)
-
-  ;; TODO: only save if anything has changed...
-
-  (if (not ep-entries)
-      (message "%s" 
-               (concat "No entries found in `ep-entries'. "
-                       "Either Emacs Paper is not started or `ep-main-bib-file' contains no entries. "
-                       "The file will not be overwritten."))
-    (ep-bib-save-entries))
-
-  (when (vc-backend ep-main-bib-file)
-    ;; TODO: make sure file is comitted
-    )
-
-  ;; Unset variables
-  (setq ep-entries nil))
+  (let* ((file-buf (find-file file))
+         (entries (ep-bib-parse-buffer file-buf)))
+    (if (not entries)
+        (message "No BibTeX entries found in %s" file)
+      (ep-ep-new-buffer (concat "EP " (file-name-nondirectory file))
+        (ep-ep-insert-main-heading (concat "Emacs Paper -- " (file-name-nondirectory file)))
+        (ep-ep-insert-entries entries)
+        (setq buffer-filename))
+    (kill-buffer file-buf)))
 
 
 ;;; General helper functions 
@@ -118,19 +92,11 @@ not exist."
 
 ;;; Loading and saving BibTeX files
 
-(defun ep-bib-parse-file (file)
-  "Find FILE and parse all BibTeX entries. Return a list of the
-parsed entries."
-  (let* ((orig-buf (current-buffer))
-         (bib-buf (find-file-read-only file))
-         (entries (ep-bib-parse-buffer bib-buf)))
-    (switch-to-buffer orig-buf)
-    entries))
 
 (defun ep-bib-parse-buffer (buffer)
   "Parse all BibTeX entries in BUFFER. Return a list of the
 parsed entries."
-  (let ((orig-buf (current-buffer)))
+  (save-current-buffer
     (set-buffer buffer)
     (let ((progress (make-progress-reporter "Parsing entries..." (point-min) (point-max)))
           entries)
@@ -144,23 +110,19 @@ parsed entries."
               (setcdr field (ep-cleanup-whitespace (cdr field))))
             (push entry entries))
           (progress-reporter-update progress (point)))
-        (switch-to-buffer orig-buf)
         (progress-reporter-done progress)
         (nreverse entries)))))
 
 
-(defun ep-bib-save-entries ()
+(defun ep-bib-save-entries (entries file)
   (interactive)
-  "Save the BibTeX entries in `ep-entries' to `ep-main-bib-file'"
-  (let ((orig-buf (current-buffer)))
-    (find-file ep-main-bib-file)
-    (toggle-read-only -1)
-    (ep-bib-write-entries ep-entries)
-    (save-buffer)
-    (toggle-read-only +1)
-    (switch-to-buffer orig-buf)))
+  "Save the BibTeX ENTRIES to FILE."
+  (save-current-buffer
+    (find-file file)
+    (ep-bib-insert-entries entries)
+    (save-buffer)))
 
-(defun ep-bib-write-entries (entries)
+(defun ep-bib-insert-entries (entries)
   "Write ENTRIES as BibTeX entries to current buffer.
 
 Warning: the buffer will be erased before the entries are
@@ -177,7 +139,7 @@ The file is not saved."
       (erase-buffer)
       (insert "This file was ceated by Emacs Paper.\n\n")
       (ep-bib-insert-entries entries)
-      (insert "%% Local Variables:\n%% mode: fundamental\n%% End:\n")
+;;      (insert "%% Local Variables:\n%% mode: fundamental\n%% End:\n")
       (setq did-write t))
     did-write))
 
@@ -321,38 +283,38 @@ nil. Return t if anything was inserted, otherwise nil."
 
 (defun ep-ep-insert-main-heading (heading)
   "Insert HEADING in current buffer."
-  (toggle-read-only -1)
   (unless (bobp)
     (insert "\n"))
   (insert (propertize heading 'face '(:weight bold :height 1.5 :underline t)))
-  (insert "\n\n")
-  (toggle-read-only 1))
+  (insert "\n\n"))
 
 (defun ep-ep-insert-sub-heading (heading)
   "Insert HEADING in current buffer."
-  (toggle-read-only -1)
   (unless (bobp)
     (insert "\n"))
   (insert (propertize heading 'face '(:weight bold :height 1.2 :underline t)))
-  (insert "\n\n")
-  (toggle-read-only 1))
+  (insert "\n\n"))
 
 (defun ep-ep-insert-entries (entries)
   "Insert ENTRIES in current buffer."
-  (toggle-read-only -1)
-
   (dolist (entry entries)
     (ep-ep-insert-entry entry)
-    (insert "\n"))
-  (toggle-read-only 1))
-
+    (insert "\n")))
 
 (defun ep-ep-highlight-entry ()
-  (setq ep-ep-current-entry (get-text-property (point) :ep-entry))
+  (setq ep-ep-current-entry (ep-ep-entry-at-point))
   (let* ((boundaries (ep-ep-entry-boundaries ep-ep-current-entry))
          (start (car boundaries))
          (end (cdr boundaries)))
-    (move-overlay ep-ep-highlight-overlay start end)))
+    (move-overlay ep-ep-highlight-overlay start end)
+
+    (let* ((query (or (ep-alist-get-value "=key=" ep-ep-current-entry)
+                      (ep-alist-get-value "eprint" ep-ep-current-entry)
+                      (ep-ep-concat-non-nil "A " (ep-alist-get-value "author" ep-ep-current-entry))))
+           (url (if query 
+                    (url-generic-parse-url (ep-spires-url (ep-spires-guess-query query)))
+                  "")))
+      (setq url-current-object url))))
 
 
 ;;; EP buffer navigation
@@ -394,7 +356,7 @@ entry is the last one in the buffer, leave `point' unchanged. If
 the new entry does not fit in the window, recenter point."
   (interactive)
   (when (ep-ep-next-entry)
-    (let* ((entry (get-text-property (point) :ep-entry))
+    (let* ((entry (ep-ep-entry-at-point))
            (boundaries (ep-ep-entry-boundaries entry))
            (start (car boundaries))
            (end (cdr boundaries)))
@@ -411,7 +373,7 @@ unchanged. If the new entry does not fit in the window, recenter
 point."
   (interactive)
   (when (ep-ep-previous-entry)
-    (let* ((entry (get-text-property (point) :ep-entry))
+    (let* ((entry (ep-ep-entry-at-point))
            (boundaries (ep-ep-entry-boundaries entry))
            (start (car boundaries))
            (end (cdr boundaries)))
@@ -426,7 +388,7 @@ point."
     (let (found-entry)
       (goto-char (point-min))
       (while (and (not found-entry) (ep-ep-next-entry))
-        (when (eq entry (get-text-property (point) :ep-entry))
+        (when (eq entry (ep-ep-entry-at-point))
           (setq found-entry t)))
       (if (not found-entry)
           nil
@@ -436,7 +398,7 @@ point."
 
 (defun ep-ep-post-command-hook ()
   (when ep-ep-current-entry
-    (let ((current-entry (get-text-property (point) :ep-entry)))
+    (let ((current-entry (ep-ep-entry-at-point)))
       (when (and current-entry (not (eq current-entry ep-ep-current-entry)))
         (ep-ep-highlight-entry)))))
 
@@ -457,18 +419,6 @@ point."
 
 (define-key ep-ep-mode-map "n" 'ep-ep-next-entry-recenter)
 (define-key ep-ep-mode-map "p" 'ep-ep-previous-entry-recenter)
-
-(defun ep-ep-main ()
-  "Set up main Emacs Paper reference buffer."
-  (interactive)
-  (switch-to-buffer "EP-main")
-  (toggle-read-only -1)
-  (erase-buffer)
-  (ep-ep-insert-main-heading "Emacs Paper references")
-  (ep-ep-insert-entries ep-entries)
-  (goto-char (point-min))
-  (ep-ep-next-entry)
-  (ep-ep-mode))
 
 (define-derived-mode  ep-ep-edit-mode bibtex-mode "EP BibTeX edit"
   "Major mode for editing Emacs Paper BibTeX entries.
@@ -507,20 +457,82 @@ NEW-ENTRY."
 
 (defun ep-ep-edit-entry (entry)
   "Edit ENTRY as a BibTeX entry. Return the new entry."
-  (let ((orig-buffer (current-buffer))
-        (edit-buffer (generate-new-buffer "EP edit entry"))
-        new-entry)
-    (switch-to-buffer edit-buffer)
-    (ep-bib-insert-entry entry)
-    (goto-char 0)
-    (ep-ep-edit-mode)
-    (catch 'ep-edit-quit
-      (recursive-edit))
-    (setq new-entry (car (ep-bib-parse-buffer edit-buffer)))
-    (kill-buffer edit-buffer)
-    (switch-to-buffer orig-buffer)
+  (save-current-buffer
+    (let ((edit-buffer (generate-new-buffer "EP edit entry"))
+          new-entry)
+      (switch-to-buffer edit-buffer)
+      (ep-bib-insert-entry entry)
+      (goto-char 0)
+      (ep-ep-edit-mode)
+      (catch 'ep-edit-quit
+        (recursive-edit))
+      (setq new-entry (car (ep-bib-parse-buffer edit-buffer)))
+      (kill-buffer edit-buffer)
+      new-entry)))
 
-    new-entry))
+(defun ep-ep-entry-at-point ()
+  "Return the entry at `point'."
+  (get-text-property (point) :ep-entry))
+
+(defun ep-ep-extract-entries (buffer)
+  (set-buffer buffer)
+  (goto-char (point-min))
+  (let (entries)
+    (while (ep-ep-next-entry)
+      (push (ep-ep-entry-at-point) entries))
+    (nreverse entries)))
+
+(defmacro ep-ep-new-buffer (name &rest body)
+  `(progn
+     (switch-to-buffer (generate-new-buffer ,name))
+     (progn ,@body)
+     (toggle-read-only 1)
+     (goto-char (point-min))
+     (ep-ep-next-entry)
+     (ep-ep-mode)))
+
+;;; Find entry online
+
+(defun ep-ep-goto-arxiv-abstract ()
+  (interactive)
+  (let* ((entry ep-ep-current-entry)
+         (url (ep-ep-concat-non-nil "http://arxiv.org/abs/" (ep-alist-get-value "eprint" entry))))
+    (if url
+        (browse-url url)
+      (message "There is no preprint number for this entry. Trying at Spires.")
+      (ep-ep-goto-spires-entry))))
+
+
+(defun ep-ep-goto-arxiv-pdf ()
+  (interactive)
+  (let* ((entry ep-ep-current-entry)
+         (url (ep-ep-concat-non-nil "http://arxiv.org/pdf/" (ep-alist-get-value "eprint" entry))))
+    (if url
+        (browse-url url)
+      (message "There is no preprint number for this entry. Trying using DOI.")
+      (ep-ep-goto-doi))))
+
+
+(defun ep-ep-goto-spires ()
+  (interactive)
+  (let* ((entry ep-ep-current-entry)
+         (query (or (ep-alist-get-value "=key=" entry)
+                    (ep-alist-get-value "eprint" entry)))
+         (url (when query (ep-spires-url (ep-spires-guess-query query)))))
+    (if url
+        (browse-url url)
+      (message "There is no preprint number for this entry. Trying using DOI.")
+      (ep-ep-goto-doi))))
+    
+
+(defun ep-ep-goto-doi ()
+  (interactive)
+  (let* ((entry ep-ep-current-entry)
+         (url (ep-ep-concat-non-nil "http://dx.doi.org/" (ep-alist-get-value "doi" entry))))
+    (if url
+        (browse-url url)
+      (message "There is no DOI for the current entry."))))
+
 
 ;;; Connect to the arXiv 
 
@@ -634,18 +646,15 @@ to new, cross listed and updated articles."
     (if (not entries-new)
         (message "No new arXiv entries in %s" category)
 
-      (switch-to-buffer (generate-new-buffer (concat "EP arXiv: " category)))
-      (ep-ep-insert-main-heading (concat "New arXiv entries for category " category))
-      (ep-ep-insert-entries entries-new)
+      (ep-ep-new-buffer (concat "EP arXiv: " category)
+        (ep-ep-insert-main-heading (concat "New arXiv entries for category " category))
+        (ep-ep-insert-entries entries-new)
 
-      (ep-ep-insert-sub-heading "Cross listed entries")
-      (ep-ep-insert-entries entries-cross-listed)
+        (ep-ep-insert-sub-heading "Cross listed entries")
+        (ep-ep-insert-entries entries-cross-listed)
 
-      (ep-ep-insert-sub-heading  "Updated entries")
-      (ep-ep-insert-entries entries-updated)
-      (goto-char (point-min))
-      (ep-ep-next-entry)
-      (ep-ep-mode))))
+        (ep-ep-insert-sub-heading  "Updated entries")
+        (ep-ep-insert-entries entries-updated)))))
 
 ;;; Connect to Spires
 
@@ -678,23 +687,22 @@ to new, cross listed and updated articles."
 
 (defun ep-spires-query-entries (query)
   "Perform a Apires QUERY. Return a list of entries."
-  (let* ((orig-buf (buffer-name))
-         (url (ep-spires-url query))
-         (query-buf (url-retrieve-synchronously url))
-         entries)
+  (save-current-buffer
+    (let* ((url (ep-spires-url query))
+           (query-buf (url-retrieve-synchronously url))
+           entries)
 
-    (switch-to-buffer query-buf)
-    
-    (goto-char (point-min))
-    (let* ((start (progn (search-forward "<!-- START RESULTS -->\n" nil 't) (point)))
-           (end (progn (search-forward "<!-- END RESULTS -->" nil 't) (- (point) 21))))
-      (message "%S" (cons start end))
-      (when (< start end)
-        (narrow-to-region start end)
-        (setq entries (ep-bib-parse-buffer query-buf))))
-    (kill-buffer query-buf)
-    (switch-to-buffer orig-buf)
-    entries))
+      (switch-to-buffer query-buf)
+      
+      (goto-char (point-min))
+      (let* ((start (progn (search-forward "<!-- START RESULTS -->\n" nil 't) (point)))
+             (end (progn (search-forward "<!-- END RESULTS -->" nil 't) (- (point) 21))))
+        (message "%S" (cons start end))
+        (when (< start end)
+          (narrow-to-region start end)
+          (setq entries (ep-bib-parse-buffer query-buf))))
+      (kill-buffer query-buf)
+      entries)))
 
 (defun ep-spires-query (query)
   "Search for QUERY on Spires and desplay the result in a new
@@ -703,12 +711,10 @@ Emacs Paper buffer."
   (let ((entries (ep-spires-query-entries (ep-spires-guess-query query))))
     (if (not entries)
         (message "No entries found for query %s" query)
-    (switch-to-buffer (generate-new-buffer "EP Spires query"))
-    (ep-ep-insert-sub-heading (concat "Spires results for query \"" query "\""))
-    (ep-ep-insert-entries entries )
-    (goto-char (point-min))
-    (ep-ep-next-entry)
-    (ep-ep-mode))))
+
+    (ep-ep-new-buffer "EP Spires query")
+      (ep-ep-insert-sub-heading (concat "Spires results for query \"" query "\""))
+      (ep-ep-insert-entries entries))))
 
 (defun ep-spires-update-current-entry ()
   "Update the current entry by getting any mssing fields from
