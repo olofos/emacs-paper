@@ -1,4 +1,4 @@
-;;;; Emacs Paper
+=;;;; Emacs Paper
 ;; 
 ;; Emacs paper for managing references
 
@@ -335,15 +335,15 @@ leave `point' unchanged and return nil."
          (prev-to-prev-to-prev (when prev-to-prev (previous-single-property-change prev-to-prev :ep-entry))))
     (cond
      ((and prev (ep-ep-entry-at-point prev)) (not (eq (ep-ep-entry-at-point prev) (ep-ep-entry-at-point))))
-           (goto-char prev)
-           (point))
-     ((and prev-to-prev (ep-ep-entry-at-point prev-to-prev))
-           (goto-char prev-to-prev)
-           (point))
-     ((and prev-to-prev-to-prev (ep-ep-entry-at-point prev-to-prev-to-prev))
-           (goto-char prev-to-prev-to-prev)
-           (point))
-     (t nil))))
+     (goto-char prev)
+     (point))
+    ((and prev-to-prev (ep-ep-entry-at-point prev-to-prev))
+     (goto-char prev-to-prev)
+     (point))
+    ((and prev-to-prev-to-prev (ep-ep-entry-at-point prev-to-prev-to-prev))
+     (goto-char prev-to-prev-to-prev)
+     (point))
+    (t nil)))
 
 (defun ep-ep-next-entry-recenter ()
   "Move point to the beginning of the next entry. If the current
