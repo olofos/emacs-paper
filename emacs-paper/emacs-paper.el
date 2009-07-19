@@ -1,4 +1,4 @@
-=;;;; Emacs Paper
+;;;; Emacs Paper
 ;; 
 ;; Emacs paper for managing references
 
@@ -7,6 +7,7 @@
 (defcustom ep-main-bib-file 
 ;;  "c:/Users/Olof/Documents/Jobb/Notes/References/refs.bib"
   "c:/Users/Olof/Documents/emacs-paper/test.bib"
+;;  "/Users/olof/Documents/emacs-paper/test.bib"
   "Main BibTeX database used by Emacs Paper."
   :type 'string)
 
@@ -334,16 +335,16 @@ leave `point' unchanged and return nil."
          (prev-to-prev (when prev (previous-single-property-change prev :ep-entry)))
          (prev-to-prev-to-prev (when prev-to-prev (previous-single-property-change prev-to-prev :ep-entry))))
     (cond
-     ((and prev (ep-ep-entry-at-point prev)) (not (eq (ep-ep-entry-at-point prev) (ep-ep-entry-at-point))))
-     (goto-char prev)
-     (point))
+     ((and prev (ep-ep-entry-at-point prev) (not (eq (ep-ep-entry-at-point prev) (ep-ep-entry-at-point))))
+      (goto-char prev)
+      (point))
     ((and prev-to-prev (ep-ep-entry-at-point prev-to-prev))
      (goto-char prev-to-prev)
      (point))
     ((and prev-to-prev-to-prev (ep-ep-entry-at-point prev-to-prev-to-prev))
      (goto-char prev-to-prev-to-prev)
      (point))
-    (t nil)))
+    (t nil))))
 
 (defun ep-ep-next-entry-recenter ()
   "Move point to the beginning of the next entry. If the current
@@ -966,7 +967,7 @@ non-nil, replace any exisitng fields."
 (defun ep-main ()
   (interactive)
   (cond 
-   ((not ep-main-buffer) (setq ep-main-buffer (ep-bib-load-file ep-main-bib-file)))
+   ((not (buffer-live-p ep-main-buffer)) (setq ep-main-buffer (ep-bib-load-file ep-main-bib-file)))
    ((and (y-or-n-p "Emacs Paper main buffer is already open. Reread the main BibTeX file? (This will kill the buffer).")
          (kill-buffer ep-main-buffer))
     (setq ep-main-buffer (ep-bib-load-file ep-main-bib-file)))
