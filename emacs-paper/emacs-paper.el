@@ -825,10 +825,10 @@ to new, cross listed and updated articles."
       (dolist (title title-list)
         (erase-buffer)
         (insert title)
-        (search-backward-regexp "(arXiv:\\([^ ]*\\) \\[\\([^]]*\\)\\]\\([^)]*\\))")
-        (cond ((string-equal (match-string 3) " CROSS LISTED")
+        (search-backward-regexp "(arXiv:\\([^ ]*\\) \\(\\[[^]]*\\]\\)? ?\\([^)]*\\))" nil t)
+        (cond ((string-equal (match-string 3) "CROSS LISTED")
                (setq cross-list (cons (match-string 1) cross-list)))
-              ((string-equal (match-string 3) " UPDATED")
+              ((string-equal (match-string 3) "UPDATED")
                (setq updated-list (cons (match-string 1) updated-list)))
               (t
                (setq new-list (cons (match-string 1) new-list))))))
