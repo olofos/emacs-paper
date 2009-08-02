@@ -430,6 +430,20 @@ entries to draw. If FUNC is nil, it defaults to `identity'."
     (goto-char (car (ep-ep-entry-boundaries current-entry)))
     (ep-ep-highlight-entry)))
 
+(defun ep-ep-filter-entries (entries filters)
+  "Filter ENTRIES. FILTERS should be a list of cons-cells (BibTeX-field . regexp)."
+  (let (res-entries match)
+    (dolist (entry entries)
+      (setq match t)
+      (dolist (filter filters)
+        (let ((field-val (ep-alist-get-value (car filter) entry))
+              (case-fold-search t))
+          (unless (and field-val (string-match (cdr filter) field-val))
+            (setq match nil))))
+      (when match 
+        (push entry res-entries)))
+    (nreverse res-entries)))
+
 (defun ep-ep-entry-boundaries (entry)
   "Return the start and end point of ENTRY in a cons cell
 as (START . END)."
@@ -459,10 +473,9 @@ as (START . END)."
 
 (defun ep-ep-post-command-hook ()
   "Make sure that the entry at `point' is highlighted." 
-  (when ep-ep-current-entry
-    (let ((entry (ep-ep-entry-at-point)))
-      (when (and entry (not (eq entry ep-ep-current-entry)))
-        (ep-ep-highlight-entry)))))
+  (let ((entry (ep-ep-entry-at-point)))
+    (when (and entry (not (eq entry ep-ep-current-entry)))
+      (ep-ep-highlight-entry))))
 
 (define-derived-mode ep-ep-mode nil "Emacs Paper references"
   "Major mode for Emacs Paper reference listings.
@@ -494,7 +507,7 @@ as (START . END)."
 
 (define-key ep-ep-mode-map "u" 'ep-spires-update-entry)
 (define-key ep-ep-mode-map "a" 'ep-arxiv-update-entry)
-(define-key ep-ep-mode-map "f" 'ep-spires-query)
+(define-key ep-ep-mode-map "f" 'ep-search)
 
 (define-key ep-ep-mode-map "s" 'ep-bib-save-file)
 (define-key ep-ep-mode-map "q" 'ep-quit)
@@ -511,13 +524,15 @@ as (START . END)."
 
 (defmacro ep-ep-new-buffer (name &rest body)
   `(progn
-     (switch-to-buffer (generate-new-buffer ,name))
-     (progn ,@body)
-     (set-buffer-modified-p nil)
-     (toggle-read-only 1)
-     (goto-char (point-min))
-     (ep-ep-next-entry)
-     (ep-ep-mode)))
+     (let ((buf (generate-new-buffer ,name)))
+       (switch-to-buffer buf)
+       (progn ,@body)
+       (set-buffer-modified-p nil)
+       (toggle-read-only 1)
+       (goto-char (point-min))
+       (ep-ep-next-entry)
+       (ep-ep-mode)
+       buf)))
 
 (defun ep-ep-entry-at-point (&optional point)
   "Return the entry at POINT. If POINT is nil, use `point;"
@@ -790,13 +805,14 @@ a list of strings. Returns a list of entries."
              (url (concat "http://export.arxiv.org/api/query?id_list="
                           id-string "&start=0&max_results=" 
                           (number-to-string (length id-list))))
+             (url-request-extra-headers '(("Accept-Charset" . "utf-8")))
              (res-buf (url-retrieve-synchronously url))
              entries)
         (set-buffer res-buf)
         (goto-char (point-min))
         (search-forward "<?xml")
         (beginning-of-line)
-        (delete-region (point-min) (point))
+        (narrow-to-region (point) (point-max))
         (setq entries (ep-arxiv-parse-atom-buffer res-buf))
         (kill-buffer res-buf)
         entries))))
@@ -909,36 +925,72 @@ arXiv."
             query
             "&FORMAT=" format "&SEQUENCE=")))
 
-(defun ep-spires-query-entries (query)
-  "Perform a Apires QUERY. Return a list of entries."
+(defun ep-spires-extract-entries (query-buf)
+  "Extract entries from a buffer resulting from a Spires query in
+QUERY-BUF. Return a list of entries. Kill QUERY-BUF after the
+entries are extracted."
   (save-current-buffer
-    (let* ((url (ep-spires-url query))
-           (query-buf (url-retrieve-synchronously url))
-           entries)
+    (let* (entries)
 
       (switch-to-buffer query-buf)
       
       (goto-char (point-min))
       (let* ((start (progn (search-forward "<!-- START RESULTS -->\n" nil 't) (point)))
              (end (progn (search-forward "<!-- END RESULTS -->" nil 't) (- (point) 21))))
-        (message "%S" (cons start end))
         (when (< start end)
           (narrow-to-region start end)
           (setq entries (ep-bib-parse-buffer query-buf))))
       (kill-buffer query-buf)
       entries)))
 
-(defun ep-spires-query (query)
-  "Search for QUERY on Spires and desplay the result in a new
-Emacs Paper buffer."
-  (interactive "sSpires query:")
-  (let ((entries (ep-spires-query-entries (ep-spires-guess-query query))))
-    (if (not entries)
-        (message "No entries found for query %s" query)
+;; Searching locally and in Spires
 
-    (ep-ep-new-buffer "EP Spires query"
-      (ep-ep-insert-sub-heading (concat "Spires results for query \"" query "\""))
-      (ep-ep-format-entries entries)))))
+(defun ep-spires-query-callback (status buf)
+  "Insert entries returned by a Spires query. Called by `url-retrieve' in `ep-search'."
+  (let ((entries (ep-spires-extract-entries (current-buffer)))
+        point)
+    (switch-to-buffer buf)
+    (setq point (point))
+    (toggle-read-only -1)
+    (goto-char (point-max))
+    (ep-ep-format-entries entries)
+    (toggle-read-only 1)
+    (goto-char point)))
+
+(defun ep-search (query)
+  "Search for QUERY in the main Emacs Paper buffer and in Spires."
+  (interactive "sSearch query:")
+  (let* ((spires-query (ep-spires-guess-query query))
+         (url (ep-spires-url spires-query)))
+    (ep-ep-new-buffer (concat "EP search results: " query)
+       (ep-ep-insert-main-heading (concat "Search results for '" query "'"))
+       (ep-ep-insert-sub-heading "Local results")
+       (let* ((ep-query (ep-ep-search-parse-query spires-query))
+              (entries (ep-ep-filter-entries (ep-ep-extract-entries ep-main-buffer) ep-query)))
+         (ep-ep-format-entries entries))
+       (ep-ep-insert-sub-heading "Spires results"))
+    (url-retrieve url 'ep-spires-query-callback (list (current-buffer)))
+    ))
+
+(defun ep-ep-search-parse-query (query)
+  "Parse the Spires formatted QUERY and returns a list of
+cons-cells (BibTeX-field . regexp)."
+  (let ((case-fold-search t)
+        result)
+    (setq query (replace-regexp-in-string "\\+" " " query))
+    (setq query (replace-regexp-in-string "^FIND? " "" query))
+
+    (dolist (elem (split-string query "\\( and \\| AND \\)"))
+      (cond
+       ((string-match "^a " elem)
+        (push (cons "author" (substring elem 2)) result))
+       ((string-match "^d " elem)
+        (push (cons "year" (substring elem 2)) result))
+       ((string-match "^eprint " elem)
+        (push (cons "eprint" (substring elem 7)) result))
+       ((string-match "^texkey " elem)
+        (push (cons "=key=" (substring elem 7)) result))))
+    result))
 
 (defun ep-spires-update-entry (&optional entry overwrite)
   "Update ENTRY by getting any missing fields from Spires. If
