@@ -28,7 +28,10 @@
     "edition" "address" "pages" "eprint" "archivePrefix" "primaryClass"
     "doi" "printed" "SLACcitation" "note" "ep-tags")
   "BibTeX fields saved by Emacs Paper. The fields are inserted in
-  the order of appearance in the list."  )
+  the order of appearance in the list.")
+
+(defvar ep-ep-common-tags
+  '("Printed" "Print this"))
 
 (defvar ep-ep-highlight-overlay nil
   "Overlay used to highlight the current entry.")
@@ -92,7 +95,7 @@ not exist."
 ;;; Loading and saving BibTeX files
 
 (defun ep-bib-load-file (file)
-  (interactive "FLoad BibTeX file:")
+  (interactive "FLoad BibTeX file: ")
 
   (let* ((file-buf (find-file file))
          (entries (ep-bib-parse-buffer file-buf)))
@@ -196,8 +199,7 @@ The file is not saved."
     (unless (and (buffer-modified-p)
                  (not (y-or-n-p (concat "File " (buffer-name) " has been changed."
                                         " Inserting entries will overwrite these changes."
-                                        " Do you want to continue?")))
-                 )
+                                        " Do you want to continue?"))))
       (erase-buffer)
       (insert "This file was ceated by Emacs Paper.\n\n")
       (ep-bib-format-entries entries)
@@ -235,8 +237,8 @@ The file is not saved."
 nil. Return t if anything was inserted, otherwise nil."
   `(if (member nil (list ,@args))
        nil
-      (insert ,@args)
-      t))
+     (insert ,@args)
+     t))
 
 (defmacro ep-ep-propertize-non-nil (string &rest properties)
   "Act as `propertize', but return nil if STRING is nil."
@@ -370,38 +372,43 @@ leave `point' unchanged and return nil."
      (point))
     (t nil))))
 
-(defun ep-ep-next-entry-recenter ()
+(defun ep-ep-next-entry-recenter (&optional n)
   "Move point to the beginning of the next entry. If the current
 entry is the last one in the buffer, leave `point' unchanged. If
-the new entry does not fit in the window, recenter point."
-  (interactive)
-  (when (ep-ep-next-entry)
-    (let* ((entry (ep-ep-entry-at-point))
-           (boundaries (ep-ep-entry-boundaries entry))
-           (start (car boundaries))
-           (end (cdr boundaries)))
-      (unless (and (pos-visible-in-window-p start) (pos-visible-in-window-p end))
-        (let* ((start-line (line-number-at-pos start))
-               (end-line (line-number-at-pos end))
+the new entry does not fit in the window, recenter point. With a
+non-nil argument, skip N entries forwards."
+  (interactive "p")
+  (let ((n (or n 1)))
+    (when (ep-ep-next-entry)
+      (dotimes (dummy (- n 1)) (ep-ep-next-entry))
+      (let* ((entry (ep-ep-entry-at-point))
+             (boundaries (ep-ep-entry-boundaries entry))
+             (start (car boundaries))
+             (end (cdr boundaries)))
+        (unless (and (pos-visible-in-window-p start) (pos-visible-in-window-p end))
+          (let* ((start-line (line-number-at-pos start))
+                 (end-line (line-number-at-pos end))
                (center-line (/ (window-height) 2)))
-          (recenter (max 0 (- center-line (/ (- end-line start-line) 2)))))))))
+            (recenter (max 0 (- center-line (/ (- end-line start-line) 2))))))))))
 
-(defun ep-ep-previous-entry-recenter ()
+(defun ep-ep-previous-entry-recenter (&optional n)
   "Move point to the beginning of the previous entry. If the
 current entry is the first one in the buffer, leave `point'
 unchanged. If the new entry does not fit in the window, recenter
-point."
-  (interactive)
-  (when (ep-ep-previous-entry)
-    (let* ((entry (ep-ep-entry-at-point))
-           (boundaries (ep-ep-entry-boundaries entry))
-           (start (car boundaries))
-           (end (cdr boundaries)))
-      (unless (and (pos-visible-in-window-p start) (pos-visible-in-window-p end))
-        (let* ((start-line (line-number-at-pos start))
-               (end-line (line-number-at-pos end))
-               (center-line (/ (window-height) 2)))
-          (recenter (max 0 (- center-line (/ (- end-line start-line) 2)))))))))
+point. With a non-nil argument, skip N entries backwards."
+  (interactive "p")
+  (let ((n (or n 1)))
+    (when (ep-ep-previous-entry)
+      (dotimes (dummy (- n 1)) (ep-ep-previous-entry))
+      (let* ((entry (ep-ep-entry-at-point))
+             (boundaries (ep-ep-entry-boundaries entry))
+             (start (car boundaries))
+             (end (cdr boundaries)))
+        (unless (and (pos-visible-in-window-p start) (pos-visible-in-window-p end))
+          (let* ((start-line (line-number-at-pos start))
+                 (end-line (line-number-at-pos end))
+                 (center-line (/ (window-height) 2)))
+            (recenter (max 0 (- center-line (/ (- end-line start-line) 2))))))))))
 
 (defun ep-ep-section-entries-boundaries ()
   (let* ((next (next-single-property-change (point) :ep-heading))
@@ -460,13 +467,48 @@ entries to draw. If FUNC is nil, it defaults to `identity'."
     (dolist (entry entries)
       (setq match t)
       (dolist (filter filters)
-        (let ((field-val (ep-alist-get-value (car filter) entry))
-              (case-fold-search t))
-          (unless (and field-val (string-match (cdr filter) field-val))
-            (setq match nil))))
+        (cond
+         ((listp filter)
+          (let ((field-val (ep-alist-get-value (car filter) entry))
+                (case-fold-search t))
+            (unless (and field-val (string-match (cdr filter) field-val))
+              (setq match nil))))
+         ((stringp filter)
+          (with-temp-buffer
+            (ep-ep-format-entry entry)
+            (goto-char (point-min))
+            (unless (re-search-forward filter nil t)
+              (setq match nil))))
+         (t (error "Filter is neither list nor string: %S" filter))))
       (when match 
         (push entry res-entries)))
     (nreverse res-entries)))
+
+(defun ep-regexp (regexp)
+  "Create a new Emacs Paper buffer showing all entries matching
+REGEXP."
+  (interactive "sRegexp: ")
+
+  (let* ((buffer-name (buffer-name))
+         (entries (ep-ep-filter-entries (ep-ep-extract-entries) (list regexp))))
+    (ep-ep-new-buffer (concat "Regexp-" (buffer-name))
+      (ep-ep-insert-main-heading (concat "Entries in '" buffer-name "' matching '" regexp "'"))
+      (ep-ep-format-entries entries))))
+
+(defun ep-entries-with-tag (&optional tag)
+    "Create a new Emacs Paper buffer showing all entries tagged
+with TAG."
+    (interactive "i")
+
+    (let ((tag (or tag
+                   (completing-read "Tag: " ep-ep-common-tags))))
+
+      (let* ((buffer-name (buffer-name))
+             (entries (ep-ep-filter-entries 
+                       (ep-ep-extract-entries) (list (cons "ep-tags" tag)))))
+        (ep-ep-new-buffer (concat (buffer-name) ":" tag)
+          (ep-ep-insert-main-heading (concat "Entries in '" buffer-name "' with tag '" tag "'"))
+          (ep-ep-format-entries entries)))))
 
 (defun ep-ep-entry-boundaries (entry)
   "Return the start and end point of ENTRY in a cons cell
@@ -526,13 +568,15 @@ as (START . END)."
 (define-key ep-ep-mode-map "I" 'ep-import-marked-entries)
 
 (define-key ep-ep-mode-map "e" 'ep-edit-entry)
-(define-key ep-ep-mode-map "t" 'ep-edit-tags)
+(define-key ep-ep-mode-map "t" 'ep-add-tag)
+(define-key ep-ep-mode-map "T" 'ep-remove-tag)
 
 (define-key ep-ep-mode-map "o" 'ep-sort-entries)
 
 (define-key ep-ep-mode-map "u" 'ep-spires-update-entry)
 (define-key ep-ep-mode-map "a" 'ep-arxiv-update-entry)
 (define-key ep-ep-mode-map "f" 'ep-search)
+(define-key ep-ep-mode-map "r" 'ep-regexp)
 
 (define-key ep-ep-mode-map "s" 'ep-bib-save-file)
 (define-key ep-ep-mode-map "q" 'ep-quit)
@@ -547,6 +591,7 @@ as (START . END)."
 (define-key ep-ep-edit-mode-map "\C-g" 'ep-ep-edit-quit)
 
 (defmacro ep-ep-new-buffer (name &rest body)
+  (declare (indent defun))
   `(progn
      (let ((buf (generate-new-buffer ,name)))
        (switch-to-buffer buf)
@@ -652,6 +697,44 @@ as (START . END)."
     (ep-alist-set "ep-tags" entry new-tags)
     (ep-ep-update-entry entry)))
 
+(defun ep-add-tag (&optional entry)
+  (interactive)
+  (let* ((entry (or entry ep-ep-current-entry))
+         (tags-val (ep-field-value "ep-tags" entry))
+         (tags (and tags-val (split-string tags-val ",")))
+         (tag (completing-read "Add tag: " ep-ep-common-tags nil nil))
+         new-tags)
+    (if (member tag tags)
+        (message "Entry already tagged with '%s'" tag)
+      (setq new-tags (mapconcat 'identity (cons tag tags) ","))
+      (when (string-equal "" new-tags)
+        (setq new-tags nil))
+      (ep-alist-set "ep-tags" entry new-tags)
+      (ep-ep-update-entry entry))))
+
+
+(defun ep-remove-tag (&optional entry)
+  (interactive)
+  (let* ((entry (or entry ep-ep-current-entry))
+         (tags-val (ep-field-value "ep-tags" entry))
+         (tags (and tags-val (split-string tags-val ",")))
+         tag new-tags)
+    (if (not tags)
+        (message "Entry has no tags")
+      (setq tag (completing-read "Remove tag: " tags nil t))
+    (cond
+     ((string-equal tag "")
+      (message "Abort"))
+     ((not (member tag tags))
+        (message "Entry is not tagged with '%s' (How could this happen?)" tag))
+     (t
+      (setq new-tags (mapconcat 'identity (delete tag tags) ","))
+      (when (string-equal "" new-tags)
+        (setq new-tags nil))
+      (ep-alist-set "ep-tags" entry new-tags)
+      (ep-ep-update-entry entry))))))
+
+
 (defun ep-mark-entry (&optional entry)
   "Mark ENTRY if it is not marked, otherwise unmark it."
   (interactive)
@@ -691,8 +774,10 @@ as (START . END)."
             old-entry)
         (while (and entries (not old-entry))
           (when (or (eq entry (car entries))
-                    (equal (ep-alist-get-value "=key=" entry) (ep-alist-get-value "=key=" (car entries)))
-                    (equal (ep-alist-get-value "eprint" entry) (ep-alist-get-value "eprint" (car entries))))
+                    (equal (ep-alist-get-value "=key=" entry) 
+                           (ep-alist-get-value "=key=" (car entries)))
+                    (equal (ep-alist-get-value "eprint" entry) 
+                           (ep-alist-get-value "eprint" (car entries))))
             (setq old-entry entry))
           (pop entries))
         (cond 
@@ -829,16 +914,27 @@ a list of strings. Returns a list of entries."
              (url (concat "http://export.arxiv.org/api/query?id_list="
                           id-string "&start=0&max_results=" 
                           (number-to-string (length id-list))))
-             (url-request-extra-headers '(("Accept-Charset" . "utf-8")))
              (res-buf (url-retrieve-synchronously url))
+             (xml-file (make-temp-file "ep-arxiv-" nil ".xml"))
+             xml-file-buf
              entries)
         (set-buffer res-buf)
         (goto-char (point-min))
         (search-forward "<?xml")
         (beginning-of-line)
-        (narrow-to-region (point) (point-max))
-        (setq entries (ep-arxiv-parse-atom-buffer res-buf))
+
+        ;; Write the XML data to a temporary file in order to
+        ;; correctly interpret the utf-8 encoding (arXiv returns utf-8
+        ;; encoded XML data but uses an iso-8859-1 HTTP header).
+        (write-region (point) (point-max) xml-file)
         (kill-buffer res-buf)
+
+        (setq xml-file-buf (find-file xml-file))
+        (setq entries (ep-arxiv-parse-atom-buffer xml-file-buf))
+
+        (kill-buffer xml-file-buf)
+        (delete-file xml-file)
+
         entries))))
 
 (defun ep-arxiv-get-new-ids (category)
@@ -983,7 +1079,7 @@ entries are extracted."
 
 (defun ep-search (query)
   "Search for QUERY in the main Emacs Paper buffer and in Spires."
-  (interactive "sSearch query:")
+  (interactive "sSearch query: ")
   (let* ((spires-query (ep-spires-guess-query query))
          (url (ep-spires-url spires-query)))
     (ep-ep-new-buffer (concat "EP search results: " query)
