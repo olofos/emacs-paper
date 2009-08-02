@@ -1063,6 +1063,25 @@ entries are extracted."
       (kill-buffer query-buf)
       entries)))
 
+(defun ep-spires-query-entries (query)
+  "Perform a Apires QUERY. Return a list of entries."
+  (save-current-buffer
+    (let* ((url (ep-spires-url query))
+           (query-buf (url-retrieve-synchronously url))
+           entries)
+
+      (switch-to-buffer query-buf)
+      
+      (goto-char (point-min))
+      (let* ((start (progn (search-forward "<!-- START RESULTS -->\n" nil 't) (point)))
+             (end (progn (search-forward "<!-- END RESULTS -->" nil 't) (- (point) 21))))
+        (message "%S" (cons start end))
+        (when (< start end)
+          (narrow-to-region start end)
+          (setq entries (ep-bib-parse-buffer query-buf))))
+      (kill-buffer query-buf)
+      entries)))
+
 ;; Searching locally and in Spires
 
 (defun ep-spires-query-callback (status buf)
