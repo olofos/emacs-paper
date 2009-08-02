@@ -2,7 +2,6 @@
 ;; 
 ;; Emacs paper for managing references
 
-
 ;;; Set up variables
 (defcustom ep-main-bib-file 
 ;;  "c:/Users/Olof/Documents/Jobb/Notes/References/refs.bib"
@@ -14,6 +13,12 @@
 (defcustom ep-arxiv-default-category "hep-th"
   "Default arXiv category to use when checking for new articles."
   :type 'string)
+
+(defcustom ep-highlight-color 
+  ;"honeydew"
+  "gray15"
+  "Background color of highlighted entry."
+  :type 'color)
 
 (defvar ep-main-buffer nil
   "Maine Emacs Paper buffer")
@@ -32,6 +37,8 @@
   "The current active entry in the buffer.")
 
 (defvar ep-ep-visited-file nil)
+
+(defvar ep-ep-file-buffers nil)
 
 ;;; General helper functions 
 
@@ -82,7 +89,6 @@ not exist."
   "Return the value of FIELD in ENTRY if set, or nil."
   (cdr (assoc-string field-name entry)))
 
-
 ;;; Loading and saving BibTeX files
 
 (defun ep-bib-load-file (file)
@@ -96,13 +102,20 @@ not exist."
         (ep-ep-insert-main-heading (concat "Emacs Paper -- " (file-name-nondirectory file)))
         (ep-ep-format-entries entries))
       (set (make-variable-buffer-local 'ep-ep-visited-file) file)
+
       (unless (member 'ep-ep-kill-buffer-query-function kill-buffer-query-functions)
-        (push 'ep-ep-kill-buffer-query-function kill-buffer-query-functions)))
+        (push 'ep-ep-kill-buffer-query-function kill-buffer-query-functions))
+
+      (push (current-buffer) ep-ep-file-buffers)
+      (unless (member 'ep-ep-kill-emacs-query-function kill-emacs-query-functions)
+        (push 'ep-ep-kill-emacs-query-function kill-emacs-query-functions)))
     (kill-buffer file-buf)
     (current-buffer)))
 
-(defun ep-bib-save-file ()
+(defun ep-bib-save-file (&optional buffer)
   (interactive)
+
+  (when buffer (set-buffer buffer))
 
   (if (and ep-ep-visited-file (not (buffer-modified-p)))
       (message "(No changes need to be saved)")
@@ -130,6 +143,17 @@ not exist."
   (if (or (not ep-ep-visited-file) (not (buffer-modified-p)))
       t
     (yes-or-no-p (concat "Buffer " (buffer-name (current-buffer)) " modified; kill anyway? "))))
+
+(defun ep-ep-kill-emacs-query-function ()
+  (let ((all-saved t))
+    (dolist (buffer ep-ep-file-buffers)
+      (when (and (buffer-live-p buffer) (buffer-modified-p buffer))
+        (if (y-or-n-p (concat "Save EP buffer " (buffer-name buffer) "?"))
+            (ep-bib-save-file buffer)
+          (setq all-saved nil))))
+    (if all-saved
+        t
+    (yes-or-no-p "Modified Emacs Paper buffer exist; exit anyway?"))))
 
 (defun ep-bib-parse-buffer (buffer)
   "Parse all BibTeX entries in BUFFER. Return a list of the
@@ -486,8 +510,9 @@ as (START . END)."
   (make-variable-buffer-local 'ep-ep-current-entry)
 
   (set (make-variable-buffer-local 'ep-ep-highlight-overlay) (make-overlay (point) (point)))
-  (overlay-put ep-ep-highlight-overlay 'face '(background-color . "honeydew"))
-;;  (overlay-put ep-ep-highlight-overlay 'face '(background-color . "gray15"))
+  (overlay-put ep-ep-highlight-overlay 
+               'face 
+               (cons 'background-color ep-highlight-color))
 
   (add-hook (make-variable-buffer-local 'post-command-hook) 'ep-ep-post-command-hook nil t)
 
@@ -513,7 +538,6 @@ as (START . END)."
 (define-key ep-ep-mode-map "q" 'ep-quit)
 
 (define-key ep-ep-mode-map "g" 'ep-goto)
-
 
 (define-derived-mode  ep-ep-edit-mode bibtex-mode "EP BibTeX edit"
   "Major mode for editing Emacs Paper BibTeX entries.
