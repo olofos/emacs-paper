@@ -1,12 +1,9 @@
 ;;;; Emacs Paper
 ;; 
-;; Emacs paper for managing references
+;; Emacs package for managing references
 
 ;;; Set up variables
-(defcustom ep-main-bib-file 
-;;  "c:/Users/Olof/Documents/Jobb/Notes/References/refs.bib"
-  "c:/Users/Olof/Documents/emacs-paper/test.bib"
-;;  "/Users/olof/Documents/emacs-paper/test.bib"
+(defcustom ep-main-bib-file ""
   "Main BibTeX database used by Emacs Paper."
   :type 'string)
 
@@ -15,10 +12,27 @@
   :type 'string)
 
 (defcustom ep-highlight-color 
-  ;"honeydew"
-  "gray15"
+  "honeydew"
+  ;"gray15"
   "Background color of highlighted entry."
   :type 'color)
+
+(defcustom ep-spires-url "http://www-library.desy.de/cgi-bin/spiface/find/hep/www?rawcmd="
+;;"http://www.slac.stanford.edu/spires/find/hep/www?rawcmd="
+  "Base URL used for Spires queries."
+  :type 'string)
+
+(defcustom ep-arxiv-url "http://arxiv.org"
+  "Base URL for visiting the arXiv."
+  :type 'string)
+
+(defcustom ep-arxiv-api-url "http://export.arxiv.org/api/query"
+  "Base URL for arXiv API."
+  :type 'string)
+
+(defcustom ep-arxiv-rss-url "http://export.arxiv.org/rss/"
+  "Base URL for arXiv RSS."
+  :type 'string)
 
 (defvar ep-main-buffer nil
   "Maine Emacs Paper buffer")
@@ -30,8 +44,9 @@
   "BibTeX fields saved by Emacs Paper. The fields are inserted in
   the order of appearance in the list.")
 
-(defvar ep-ep-common-tags
-  '("Printed" "Print this"))
+(defvar ep-ep-common-tags '("Printed" "Print this")
+  "List of common Emacs Paper tags, used for completion when
+  adding a tag to an entry.")
 
 (defvar ep-ep-highlight-overlay nil
   "Overlay used to highlight the current entry.")
@@ -39,9 +54,12 @@
 (defvar ep-ep-current-entry nil
   "The current active entry in the buffer.")
 
-(defvar ep-ep-visited-file nil)
+(defvar ep-ep-visited-file nil
+  "If the current Emacs Paper buffer is visiting a file, this
+  variable contains the filename.")
 
-(defvar ep-ep-file-buffers nil)
+(defvar ep-ep-file-buffers nil
+  "List of all Emacs Paper buffer visiting files.")
 
 ;;; General helper functions 
 
@@ -95,6 +113,8 @@ not exist."
 ;;; Loading and saving BibTeX files
 
 (defun ep-bib-load-file (file)
+  "Load a BibTex FILE and display it in a new Emacs Paper
+buffer."
   (interactive "FLoad BibTeX file: ")
 
   (let* ((file-buf (find-file file))
@@ -116,6 +136,8 @@ not exist."
     (current-buffer)))
 
 (defun ep-bib-save-file (&optional buffer)
+  "Save the entries in the Emacs Paper BUFFER, or the
+`current-buffer', to file as BibTeX entries."
   (interactive)
 
   (when buffer (set-buffer buffer))
@@ -140,14 +162,21 @@ not exist."
          ((not entries) (error "The buffer contain no entries"))
          (t
           (ep-bib-save-entries entries filename)
+          (message "%d entries saved to %s" (length entries) ep-ep-visited-file)
           (set-buffer-modified-p nil)))))))
 
 (defun ep-ep-kill-buffer-query-function ()
+  "Check if the current EP buffer is visiting a file and is
+modified, then ask the user wether the buffer should be
+killed. Called from `kill-buffer'."
   (if (or (not ep-ep-visited-file) (not (buffer-modified-p)))
       t
     (yes-or-no-p (concat "Buffer " (buffer-name (current-buffer)) " modified; kill anyway? "))))
 
 (defun ep-ep-kill-emacs-query-function ()
+  "Check if there are any unsaved buffers, and ask if they should
+be saved. If not, ask wether we still should exit Emacs. Called
+from `save-buffers-kill-terminal'."
   (let ((all-saved t))
     (dolist (buffer ep-ep-file-buffers)
       (when (and (buffer-live-p buffer) (buffer-modified-p buffer))
@@ -183,6 +212,7 @@ parsed entries."
   (save-current-buffer
     (find-file file)
     (erase-buffer)
+    (insert "This file was created by Emacs Paper.\n\n")
     (ep-bib-format-entries entries)
     (save-buffer)
     (kill-buffer (current-buffer))))
@@ -372,7 +402,7 @@ leave `point' unchanged and return nil."
      (point))
     (t nil))))
 
-(defun ep-ep-next-entry-recenter (&optional n)
+(defun ep-next-entry-recenter (&optional n)
   "Move point to the beginning of the next entry. If the current
 entry is the last one in the buffer, leave `point' unchanged. If
 the new entry does not fit in the window, recenter point. With a
@@ -391,7 +421,7 @@ non-nil argument, skip N entries forwards."
                (center-line (/ (window-height) 2)))
             (recenter (max 0 (- center-line (/ (- end-line start-line) 2))))))))))
 
-(defun ep-ep-previous-entry-recenter (&optional n)
+(defun ep-previous-entry-recenter (&optional n)
   "Move point to the beginning of the previous entry. If the
 current entry is the first one in the buffer, leave `point'
 unchanged. If the new entry does not fit in the window, recenter
@@ -411,6 +441,7 @@ point. With a non-nil argument, skip N entries backwards."
             (recenter (max 0 (- center-line (/ (- end-line start-line) 2))))))))))
 
 (defun ep-ep-section-entries-boundaries ()
+  "Return the boundaries of the current section as a cons-pair (start . end)."
   (let* ((next (next-single-property-change (point) :ep-heading))
          (prev (previous-single-property-change (point) :ep-heading))
          (start (cond 
@@ -425,9 +456,10 @@ point. With a non-nil argument, skip N entries backwards."
          (end (next-single-property-change start :ep-heading)))
     (unless end
       (setq end (point-max)))
-    (cons start  end)))
+    (cons start end)))
 
 (defun ep-sort-entries (&optional key interactive)
+  "Sort the entries in the current buffer, ordering them by KEY."
   (interactive "i\np")
   (let ((key (or key 
                  (if interactive
@@ -496,7 +528,7 @@ REGEXP."
       (ep-ep-format-entries entries))))
 
 (defun ep-entries-with-tag (&optional tag)
-    "Create a new Emacs Paper buffer showing all entries tagged
+  "Create a new Emacs Paper buffer showing all entries tagged
 with TAG."
     (interactive "i")
 
@@ -560,8 +592,8 @@ as (START . END)."
 
   (ep-ep-highlight-entry))
 
-(define-key ep-ep-mode-map "n" 'ep-ep-next-entry-recenter)
-(define-key ep-ep-mode-map "p" 'ep-ep-previous-entry-recenter)
+(define-key ep-ep-mode-map "n" 'ep-next-entry-recenter)
+(define-key ep-ep-mode-map "p" 'ep-previous-entry-recenter)
 
 (define-key ep-ep-mode-map "m" 'ep-mark-entry)
 (define-key ep-ep-mode-map "i" 'ep-import-entry)
@@ -591,6 +623,8 @@ as (START . END)."
 (define-key ep-ep-edit-mode-map "\C-g" 'ep-ep-edit-quit)
 
 (defmacro ep-ep-new-buffer (name &rest body)
+  "Create a new Emacs Paper buffer named NAME and execute BODY,
+then go to the first entry and turn on Emacs Paper mode."
   (declare (indent defun))
   `(progn
      (let ((buf (generate-new-buffer ,name)))
@@ -611,6 +645,8 @@ as (START . END)."
     (get-text-property point :ep-entry)))
 
 (defun ep-ep-extract-entries (&optional buffer)
+  "Return the entries in BUFFER as a list. Default to
+`current-buffer'"
   (save-excursion
     (if buffer
         (set-buffer buffer))
@@ -621,6 +657,8 @@ as (START . END)."
       (nreverse entries))))
 
 (defun ep-ep-extract-marked-entries (&optional buffer)
+  "Return all marked entries in BUFFER as a list. Default to
+`current-buffer'"
   (if buffer
       (set-buffer buffer))
   (let ((overlays (overlays-in (point-min) (point-max)))
@@ -628,7 +666,7 @@ as (START . END)."
     (dolist (overlay overlays)
       (when (overlay-get overlay :ep-mark)
         (push (ep-ep-entry-at-point (overlay-start overlay)) entries)))
-    (nreverse entries)))
+    entries))
 
 ;; Entry editing
 
@@ -688,6 +726,8 @@ as (START . END)."
       (ep-ep-update-entry entry))))
 
 (defun ep-edit-tags (&optional entry)
+  "Edit all tags of ENTRY using the minibuffer. Default to the
+current entry."
   (interactive)
   (let* ((entry (or entry ep-ep-current-entry))
          (tags (ep-field-value "ep-tags" entry))
@@ -697,12 +737,14 @@ as (START . END)."
     (ep-alist-set "ep-tags" entry new-tags)
     (ep-ep-update-entry entry)))
 
-(defun ep-add-tag (&optional entry)
+(defun ep-add-tag (&optional tag entry)
+  "Add TAG to ENTRY. If TAG is not given, prompt for it. Default
+to the current entry."
   (interactive)
   (let* ((entry (or entry ep-ep-current-entry))
          (tags-val (ep-field-value "ep-tags" entry))
          (tags (and tags-val (split-string tags-val ",")))
-         (tag (completing-read "Add tag: " ep-ep-common-tags nil nil))
+         (tag (or tag (completing-read "Add tag: " ep-ep-common-tags nil nil)))
          new-tags)
     (if (member tag tags)
         (message "Entry already tagged with '%s'" tag)
@@ -712,8 +754,9 @@ as (START . END)."
       (ep-alist-set "ep-tags" entry new-tags)
       (ep-ep-update-entry entry))))
 
-
-(defun ep-remove-tag (&optional entry)
+(defun ep-remove-tag (&optional tag entry)
+  "Remove TAG from ENTRY. If TAG is not given, prompt for
+it. Default to the current entry."
   (interactive)
   (let* ((entry (or entry ep-ep-current-entry))
          (tags-val (ep-field-value "ep-tags" entry))
@@ -721,7 +764,7 @@ as (START . END)."
          tag new-tags)
     (if (not tags)
         (message "Entry has no tags")
-      (setq tag (completing-read "Remove tag: " tags nil t))
+      (setq tag (or tag (completing-read "Remove tag: " tags nil t)))
     (cond
      ((string-equal tag "")
       (message "Abort"))
@@ -762,6 +805,8 @@ as (START . END)."
         t)))))
 
 (defun ep-import-entry (&optional entry)
+  "Import ENTRY to the main Emacs Paper buffer. Default to the
+current entry."
   (interactive)
   
   (let ((entry (or entry ep-ep-current-entry)))
@@ -792,6 +837,7 @@ as (START . END)."
           (message "Entry saved to '%s'" (buffer-name ep-main-buffer)))))))))
          
 (defun ep-import-marked-entries ()
+  "Import all marked entries to the main Emaca Paper buffer."
   (interactive)
   (let ((marked-entries (ep-ep-extract-marked-entries))
         (saved 0))
@@ -819,7 +865,7 @@ as (START . END)."
   "Go to the arXiv abstract page of the current entry."
   (interactive)
   (let* ((entry ep-ep-current-entry)
-         (url (ep-ep-concat-non-nil "http://arxiv.org/abs/" (ep-alist-get-value "eprint" entry))))
+         (url (ep-ep-concat-non-nil ep-arxiv-url "/abs/" (ep-alist-get-value "eprint" entry))))
     (if url
         (browse-url url)
       (message "There is no preprint number for this entry. Trying at Spires.")
@@ -829,7 +875,7 @@ as (START . END)."
   "Go to the arXiv PDF of the current entry."
   (interactive)
   (let* ((entry ep-ep-current-entry)
-         (url (ep-ep-concat-non-nil "http://arxiv.org/pdf/" (ep-alist-get-value "eprint" entry))))
+         (url (ep-ep-concat-non-nil ep-arxiv-url "/pdf/" (ep-alist-get-value "eprint" entry))))
     (if url
         (browse-url url)
       (message "There is no preprint number for this entry. Trying using DOI.")
@@ -860,6 +906,7 @@ as (START . END)."
 ;;; Connect to the arXiv 
 
 (defun ep-arxiv-parse-atom-buffer (buffer)
+  "Parse the Atom file in BUFFER and return a list of entries."
   (let ((entry-list nil))
     (save-excursion
       (set-buffer buffer)
@@ -911,7 +958,7 @@ a list of strings. Returns a list of entries."
   (when id-list
     (save-excursion
       (let* ((id-string (mapconcat 'identity id-list ","))
-             (url (concat "http://export.arxiv.org/api/query?id_list="
+             (url (concat ep-arxiv-api-url "?id_list="
                           id-string "&start=0&max_results=" 
                           (number-to-string (length id-list))))
              (res-buf (url-retrieve-synchronously url))
@@ -941,7 +988,7 @@ a list of strings. Returns a list of entries."
   "Retrive new entries from the arXiv for CATEGORY. Returns a
 tripplet with three lists of article identifiers, corresponding
 to new, cross listed and updated articles."
-  (let* ((res-buf (url-retrieve-synchronously (concat "http://export.arxiv.org/rss/" category)))
+  (let* ((res-buf (url-retrieve-synchronously (concat ep-arxiv-rss-url category)))
          (title-list (save-excursion
                        (set-buffer res-buf)
                        (let* ((root (xml-parse-region (point-min) (point-max)))
@@ -1013,7 +1060,11 @@ arXiv."
         (ep-ep-format-entries entries-cross-listed)
 
         (ep-ep-insert-sub-heading  "Updated entries")
-        (ep-ep-format-entries entries-updated)))))
+        (ep-ep-format-entries entries-updated)
+        (message "Showing %d new entries, %d cross listed entries and %d updated entries."
+                 (length entries-new)
+                 (length entries-cross-listed)
+                 (length entries-updated))))))
 
 ;;; Connect to Spires
 
@@ -1040,8 +1091,7 @@ arXiv."
 (defun ep-spires-url (query &optional format)
   "Construct an url for a Spires QUERY."
   (let ((format (or format "wwwbriefbibtex")))
-    (concat "http://www-library.desy.de/cgi-bin/spiface/find/hep/www?rawcmd="
-            ;;"http://www.slac.stanford.edu/spires/find/hep/www?rawcmd="
+    (concat ep-spires-url
             query
             "&FORMAT=" format "&SEQUENCE=")))
 
@@ -1156,6 +1206,7 @@ non-nil, replace any exisitng fields."
 ;;  Main buffer
 
 (defun ep-main ()
+  "Load the main Emacs Paper buffer."
   (interactive)
   (cond 
    ((not (buffer-live-p ep-main-buffer)) (setq ep-main-buffer (ep-bib-load-file ep-main-bib-file)))
@@ -1166,6 +1217,7 @@ non-nil, replace any exisitng fields."
   
 
 (defun ep-quit ()
+  "Close the buffer."
   (interactive)
 
   (let ((buffer (current-buffer)))
