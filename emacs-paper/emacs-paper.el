@@ -533,13 +533,13 @@ with TAG."
     (interactive "i")
 
     (let ((tag (or tag
-                   (completing-read "Tag: " ep-ep-common-tags))))
+                   (completing-read "Tag or regexp: " ep-ep-common-tags))))
 
       (let* ((buffer-name (buffer-name))
              (entries (ep-ep-filter-entries 
                        (ep-ep-extract-entries) (list (cons "ep-tags" tag)))))
         (ep-ep-new-buffer (concat (buffer-name) ":" tag)
-          (ep-ep-insert-main-heading (concat "Entries in '" buffer-name "' with tag '" tag "'"))
+          (ep-ep-insert-main-heading (concat "Entries in '" buffer-name "' with tags matching '" tag "'"))
           (ep-ep-format-entries entries)))))
 
 (defun ep-ep-entry-boundaries (entry)
@@ -675,14 +675,25 @@ then go to the first entry and turn on Emacs Paper mode."
   (let* ((highlight (eq entry ep-ep-current-entry))
          (boundaries (ep-ep-entry-boundaries entry))
          (start (car boundaries))
-         (end (cdr boundaries)))
+         (end (cdr boundaries))
+         (overlays (overlays-at start))
+         mark-overlay)
     (save-excursion
+      (while (and overlays (not mark-overlay))
+        (when (overlay-get (car overlays) :ep-mark)
+          (setq mark-overlay (car overlays)))
+        (pop overlays))
+      (when mark-overlay
+        (move-overlay mark-overlay start start))
+
       (toggle-read-only -1)
       (goto-char start)
       (delete-region (- start 1)
                      end)
       (ep-ep-format-entry entry)
-      (toggle-read-only 1))
+      (toggle-read-only 1)
+      (when mark-overlay
+        (move-overlay mark-overlay start (point))))
     
     (when highlight
       (forward-char)
@@ -778,8 +789,10 @@ it. Default to the current entry."
       (ep-ep-update-entry entry))))))
 
 
-(defun ep-mark-entry (&optional entry)
-  "Mark ENTRY if it is not marked, otherwise unmark it."
+(defun ep-mark-entry (&optional entry mark)
+  "Mark ENTRY if it is not marked, otherwise unmark it. Default
+to the current entry. If MARK is 'mark, always mark ENTRY, if
+MARK is 'unmark, unmark ENTRY."
   (interactive)
   (save-excursion
     (let* ((entry (or entry ep-ep-current-entry))
@@ -792,17 +805,32 @@ it. Default to the current entry."
         (when (overlay-get (car overlays) :ep-mark)
           (setq marked (car overlays)))
         (pop overlays))
+      (unless mark
+        (if marked
+            (setq mark 'unmark)
+          (setq mark 'mark)))
       (cond 
-       (marked 
-        (delete-overlay marked)
-        (message "Entry unmarked")
+       ((eq mark 'unmark)
+        (when marked
+          (delete-overlay marked)
+          (message "Entry unmarked"))
         nil)
-       (t        
-        (let ((overlay (make-overlay start end)))
-          (overlay-put overlay 'face 'bold)
-          (overlay-put overlay :ep-mark t)
-          (message "Entry marked"))
+       ((eq mark 'mark)
+        (unless marked
+          (let ((overlay (make-overlay start end)))
+            (overlay-put overlay 'face 'bold)
+            (overlay-put overlay 'before-string "* ")
+            (overlay-put overlay :ep-mark t)
+            (message "Entry marked")))
         t)))))
+
+(defun ep-mark-entries (regexp unmark)
+  "Mark all entries matching REGEXP. If UNMARK is non-nil, unmark the entries instead."
+  (interactive "sRegexp: \nP")
+  (let ((entries (ep-ep-filter-entries (ep-ep-extract-entries) (list regexp))))
+    (dolist (entry entries)
+      (ep-mark-entry entry (if unmark 'unmark 'mark)))
+    (message "%d entries %s" (length entries) (if unmark "unmarked" "marked"))))
 
 (defun ep-import-entry (&optional entry)
   "Import ENTRY to the main Emacs Paper buffer. Default to the
