@@ -12,8 +12,8 @@
   :type 'string)
 
 (defcustom ep-highlight-color 
-  "honeydew"
-  ;"gray15"
+  ;"honeydew"
+  "gray15"
   "Background color of highlighted entry."
   :type 'color)
 
@@ -211,8 +211,6 @@ parsed entries."
   "Save the BibTeX ENTRIES to FILE."
   (save-current-buffer
     (find-file file)
-    (erase-buffer)
-    (insert "This file was created by Emacs Paper.\n\n")
     (ep-bib-format-entries entries)
     (save-buffer)
     (kill-buffer (current-buffer))))
@@ -231,21 +229,17 @@ The file is not saved."
                                         " Inserting entries will overwrite these changes."
                                         " Do you want to continue?"))))
       (erase-buffer)
-      (insert "This file was ceated by Emacs Paper.\n\n")
-      (ep-bib-format-entries entries)
+      (insert "This file was created by Emacs Paper.\n\n")
+      (let ((progress (make-progress-reporter "Insering entries..." 0 (length entries)))
+	    (counter 0))
+	(dolist (entry entries)
+	  (ep-bib-format-entry entry)
+	  (setq counter (+ 1 counter))
+	  (progress-reporter-update progress counter)
+	  (insert "\n\n"))
+	(progress-reporter-done progress))
       (setq did-write t))
     did-write))
-
-(defun ep-bib-format-entries (entries)
-  "Insert ENTRIES into current buffer."
-  (let ((progress (make-progress-reporter "Insering entries..." 0 (length entries)))
-        (counter 0))
-    (dolist (entry entries)
-      (ep-bib-format-entry entry)
-      (setq counter (+ 1 counter))
-      (progress-reporter-update progress counter)
-      (insert "\n\n"))
-    (progress-reporter-done progress)))
 
 (defun ep-bib-format-entry (entry)
   "Insert ENTRY in current buffer."
@@ -846,12 +840,15 @@ current entry."
       (let ((entries (ep-ep-extract-entries))
             old-entry)
         (while (and entries (not old-entry))
-          (when (or (eq entry (car entries))
-                    (equal (ep-alist-get-value "=key=" entry) 
-                           (ep-alist-get-value "=key=" (car entries)))
-                    (equal (ep-alist-get-value "eprint" entry) 
-                           (ep-alist-get-value "eprint" (car entries))))
+	  (when (or (eq entry (car entries))
+                    (and (ep-alist-get-value "=key=" entry)
+			 (equal (ep-alist-get-value "=key=" entry) 
+				(ep-alist-get-value "=key=" (car entries))))
+                    (and (ep-alist-get-value "eprint" entry) 
+			 (equal (ep-alist-get-value "eprint" entry) 
+				(ep-alist-get-value "eprint" (car entries)))))
             (setq old-entry entry))
+
           (pop entries))
         (cond 
          (old-entry
