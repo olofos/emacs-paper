@@ -12,8 +12,8 @@
   :type 'string)
 
 (defcustom ep-highlight-color 
-  ;"honeydew"
-  "gray15"
+  "honeydew"
+  ;"gray15"
   "Background color of highlighted entry."
   :type 'color)
 
@@ -709,6 +709,7 @@ then go to the first entry and turn on Emacs Paper mode."
   (let* ((entry  (or entry ep-ep-current-entry))
          (highlight (eq entry ep-ep-current-entry))
          (edit-buffer (generate-new-buffer "EP edit entry"))
+         (ep-buffer (current-buffer))
          new-entry)
     (switch-to-buffer edit-buffer)
     (buffer-disable-undo)
@@ -721,6 +722,7 @@ then go to the first entry and turn on Emacs Paper mode."
             (recursive-edit))
       (setq new-entry (car (ep-bib-parse-buffer edit-buffer))))
     (kill-buffer edit-buffer)
+    (switch-to-buffer ep-buffer)
 
     (if  (not new-entry)
         (message "Canceled")
