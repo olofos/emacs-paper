@@ -44,7 +44,7 @@
   "BibTeX fields saved by Emacs Paper. The fields are inserted in
   the order of appearance in the list.")
 
-(defvar ep-ep-common-tags '("Printed" "Print this")
+(defvar ep-ep-common-tags '("Printed" "TODO: Print")
   "List of common Emacs Paper tags, used for completion when
   adding a tag to an entry.")
 
@@ -103,6 +103,12 @@ not exist."
   (dolist (field alist)
     (setcdr field nil)))
 
+(defun ep-replace-regexp (regexp string)
+  "Replaces any string matching 'regexp' with 'string'"
+  (goto-char (point-min))
+  (let ((case-fold-search nil))
+	(while (re-search-forward regexp nil t) 
+	  (replace-match string t nil))))
 
 ;;; Entry helper functions
 
@@ -1138,7 +1144,55 @@ entries are extracted."
           (narrow-to-region start end)
           (setq entries (ep-bib-parse-buffer query-buf))))
       (kill-buffer query-buf)
+
+      (dolist (entry entries)
+        (ep-spires-fix-title entry))
+
       entries)))
+
+(defun ep-spires-fix-title (entry)
+  (with-temp-buffer
+    (insert (ep-alist-get-value "title" entry))
+    
+    (let ((replacements
+           '(("\n" . " ")       ; Remove any newlines
+             (" +" . " ")       ; Only single spaces
+  
+             ("^{" . "")                ; Remove start brace
+             ("}$" . "")                ; Remove end brace
+  
+             ("AdS(5) *x *S(5)" . "{$\\\\AdS_5 \\\\times \\\\Sphere^5$}")
+             ("AdS(5) *x *S\\*\\*5" . "{$\\\\AdS_5 \\\\times \\\\Sphere^5$}")
+             ("AdS_?5 *x *S^?5" . "{$\\\\AdS_5 \\\\times \\\\Sphere^5$}")
+             ("AdS_?4 *[x\*] *CP[_^]?3" . "{$\\\\AdS_4 \\\\times \\\\CP^3$}")
+             (" +N *= *4" . " {$\\\\superN = 4$}")
+             (" +N *= *6" . " {$\\\\superN = 6$}")
+             ("^N *= *4" . "{$\\\\superN = 4$}")
+             ("^N *= *6" . "{$\\\\superN = 6$}")
+             (" SYM" . " {SYM}")
+             ("Yang" . "{Y}ang")
+             ("Bethe" . "{B}ethe")
+             ("Mill" . "{M}ill")
+             ("Chern" . "{C}hern")
+             ("Simons" . "{S}imons")
+             ("Hirota" . "{H}irota")
+             ("Baxter" . "{B}axter")
+             ("S-matrix" . "{S}-matrix")
+             ("S matrix" . "{S} matrix")
+             ("AdS */ *CFT" . "{AdS/CFT}")
+             ("AdS_?4 */ *CFT_?3" . "{AdS$_4$/CFT$_3$}")
+             ("SU(2) *x *SU(2)" . "{$SU(2) \\\\times SU(2)$}")
+             ("M2" . "{M2}")
+             ("IIA" . "{IIA}")
+             ("IIB" . "{IIB}")
+             ("ABJ" . "{ABJ}")
+             ("{ABJ}M" . "{ABJM}")
+             ("CP^3[^$]" . "{$\\\\CP^3$}"))))
+
+           (dolist (repl replacements)
+             (ep-replace-regexp (car repl) (cdr repl))))
+
+    (ep-alist-set "title" entry (buffer-substring (point-min) (point-max)))))
 
 (defun ep-spires-query-entries (query)
   "Perform a Apires QUERY. Return a list of entries."
@@ -1165,13 +1219,14 @@ entries are extracted."
   "Insert entries returned by a Spires query. Called by `url-retrieve' in `ep-search'."
   (let ((entries (ep-spires-extract-entries (current-buffer)))
         point)
-    (switch-to-buffer buf)
-    (setq point (point))
-    (toggle-read-only -1)
-    (goto-char (point-max))
-    (ep-ep-format-entries entries)
-    (toggle-read-only 1)
-    (goto-char point)))
+    (when (buffer-live-p buf)
+      (switch-to-buffer buf)
+      (setq point (point))
+      (toggle-read-only -1)
+      (goto-char (point-max))
+      (ep-ep-format-entries entries)
+      (toggle-read-only 1)
+      (goto-char point))))
 
 (defun ep-search (query)
   "Search for QUERY in the main Emacs Paper buffer and in Spires."
@@ -1185,8 +1240,7 @@ entries are extracted."
               (entries (ep-ep-filter-entries (ep-ep-extract-entries ep-main-buffer) ep-query)))
          (ep-ep-format-entries entries))
        (ep-ep-insert-sub-heading "Spires results"))
-    (url-retrieve url 'ep-spires-query-callback (list (current-buffer)))
-    ))
+    (url-retrieve url 'ep-spires-query-callback (list (current-buffer)))))
 
 (defun ep-ep-search-parse-query (query)
   "Parse the Spires formatted QUERY and returns a list of
@@ -1223,6 +1277,7 @@ non-nil, replace any exisitng fields."
      ((not query) (message "%s" "The current entry has no key and no preprint number"))
      ((not spires-entry) (message "%s" "The current entry was not found on Spires"))
      (t
+      (ep-spires-fix-title spires-entry)
       (dolist (field spires-entry)
         (if (not overwrite)
             (ep-alist-insert (car field) entry (cdr field))
