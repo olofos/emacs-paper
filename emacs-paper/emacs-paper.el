@@ -1256,6 +1256,8 @@ cons-cells (BibTeX-field . regexp)."
         (push (cons "author" (substring elem 2)) result))
        ((string-match "^d " elem)
         (push (cons "year" (substring elem 2)) result))
+       ((string-match "^t " elem)
+        (push (cons "title" (substring elem 2)) result))
        ((string-match "^eprint " elem)
         (push (cons "eprint" (substring elem 7)) result))
        ((string-match "^texkey " elem)
