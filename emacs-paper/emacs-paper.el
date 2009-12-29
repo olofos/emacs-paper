@@ -12,13 +12,14 @@
   :type 'string)
 
 (defcustom ep-highlight-color 
-  "honeydew"
+  "honeydew1"
   ;"gray15"
   "Background color of highlighted entry."
   :type 'color)
 
-(defcustom ep-spires-url "http://www-library.desy.de/cgi-bin/spiface/find/hep/www?rawcmd="
-;;"http://www.slac.stanford.edu/spires/find/hep/www?rawcmd="
+(defcustom ep-spires-url 
+;; "http://www-library.desy.de/cgi-bin/spiface/find/hep/www?rawcmd="
+  "http://www.slac.stanford.edu/spires/find/hep/www?rawcmd="
   "Base URL used for Spires queries."
   :type 'string)
 
@@ -34,8 +35,11 @@
   "Base URL for arXiv RSS."
   :type 'string)
 
+(defcustom ep-message-cmd nil
+  "Command called to send messages.")
+
 (defvar ep-main-buffer nil
-  "Maine Emacs Paper buffer")
+  "Main Emacs Paper buffer")
 
 (defvar ep-bib-fields
   '("author" "title" "journal" "volume" "number" "publisher" "year" "month" 
@@ -62,6 +66,12 @@
   "List of all Emacs Paper buffer visiting files.")
 
 ;;; General helper functions 
+
+(defmacro ep-message (fmt &rest args)
+  `(progn
+     (when ep-message-cmd
+       (shell-command (concat ep-ep-message-cmd "\"" (format ,fmt ,@args) "\"")))
+     (message ,fmt ,@args)))
 
 (defun ep-cleanup-whitespace (string)
   "Remove any tabs, newlines and double spaces from STRING."
@@ -257,6 +267,20 @@ The file is not saved."
           (bibtex-make-field (list field-name nil field-value nil)))))
   (insert "\n")
   (insert (bibtex-entry-right-delimiter)))
+
+
+(defun ep-bib-find-file ()
+  "Go to the BiBTeX-file visited by the Emacs Paper buffer."
+  (interactive)
+  (if (not ep-ep-visited-file)
+      (message "The current buffer is not visiting a BibTeX file")
+    (when (and (buffer-modified-p) (y-or-n-p (concat "Save EP buffer " (buffer-name) " to " ep-ep-visited-file " before visiting? ")))
+      (ep-bib-save-file))
+    (let ((key (ep-field-value "=key=" ep-ep-current-entry)))
+      (find-file ep-ep-visited-file)
+      (goto-char 0)
+      (search-forward (concat "{" key))
+      (beginning-of-line))))
 
 ;;; EP buffer formatting
 
@@ -610,6 +634,7 @@ as (START . END)."
 (define-key ep-ep-mode-map "f" 'ep-search)
 (define-key ep-ep-mode-map "r" 'ep-regexp)
 
+(define-key ep-ep-mode-map "b" 'ep-bib-find-file)
 (define-key ep-ep-mode-map "s" 'ep-bib-save-file)
 (define-key ep-ep-mode-map "q" 'ep-quit)
 
@@ -1010,6 +1035,9 @@ a list of strings. Returns a list of entries."
         (kill-buffer res-buf)
 
         (setq xml-file-buf (find-file xml-file))
+        ;; Don't clutter the file name history
+        (when (string= (car file-name-history) xml-file)
+            (setq file-name-history (cdr file-name-history)))
         (setq entries (ep-arxiv-parse-atom-buffer xml-file-buf))
 
         (kill-buffer xml-file-buf)
@@ -1059,8 +1087,9 @@ arXiv."
   (interactive "i\nP")
   (let* ((entry (or entry ep-ep-current-entry))
          (highlight (eq entry ep-ep-current-entry))
-         (eprint (ep-alist-get-value "eprint" entry))
-         (arxiv-entry (when eprint (car (ep-arxiv-id-query (list eprint))))))
+         (eprint (ep-alist-get-value "eprint" entry)))
+    (message (concat "Looking up " eprint " on the arXiv"))
+    (let ((arxiv-entry (when eprint (car (ep-arxiv-id-query (list eprint))))))
     (cond 
      ((not eprint) (message "%s" "The current entry has no preprint number"))
      (t
@@ -1069,7 +1098,7 @@ arXiv."
             (ep-alist-insert (car field) entry (cdr field))
           (ep-alist-set (car field) entry (cdr field))))
       (ep-ep-update-entry entry)
-      (message "Entry updated")))))
+      (message "Entry updated"))))))
 
 (defun ep-check-arxiv (category) 
   "Show new entries at the arXiv for CATEGORY."
@@ -1083,7 +1112,15 @@ arXiv."
          (entries-updated (ep-arxiv-id-query (caddr ids))))
 
     (if (not entries-new)
-        (message "No new arXiv entries in %s" category)
+        (ep-message "No new arXiv entries in %s" category)
+
+      (dolist (entry entries-new)
+        (ep-ep-fix-title entry))
+      (dolist (entry entries-cross-listed)
+        (ep-ep-fix-title entry))
+      (dolist (entry entries-updated)
+        (ep-ep-fix-title entry))
+
 
       (ep-ep-new-buffer (concat "EP arXiv: " category)
         (ep-ep-insert-main-heading (concat "New arXiv entries for category " category))
@@ -1094,7 +1131,7 @@ arXiv."
 
         (ep-ep-insert-sub-heading  "Updated entries")
         (ep-ep-format-entries entries-updated)
-        (message "Showing %d new entries, %d cross listed entries and %d updated entries."
+        (ep-message "Showing %d new entries, %d cross listed entries and %d updated entries."
                  (length entries-new)
                  (length entries-cross-listed)
                  (length entries-updated))))))
@@ -1146,11 +1183,11 @@ entries are extracted."
       (kill-buffer query-buf)
 
       (dolist (entry entries)
-        (ep-spires-fix-title entry))
+        (ep-ep-fix-title entry))
 
       entries)))
 
-(defun ep-spires-fix-title (entry)
+(defun ep-ep-fix-title (entry)
   (with-temp-buffer
     (insert (ep-alist-get-value "title" entry))
     
@@ -1169,7 +1206,7 @@ entries are extracted."
              (" +N *= *6" . " {$\\\\superN = 6$}")
              ("^N *= *4" . "{$\\\\superN = 4$}")
              ("^N *= *6" . "{$\\\\superN = 6$}")
-             (" SYM" . " {SYM}")
+;             (" SYM" . " {SYM}")
              ("Yang" . "{Y}ang")
              ("Bethe" . "{B}ethe")
              ("Mill" . "{M}ill")
@@ -1177,17 +1214,30 @@ entries are extracted."
              ("Simons" . "{S}imons")
              ("Hirota" . "{H}irota")
              ("Baxter" . "{B}axter")
-             ("S-matrix" . "{S}-matrix")
-             ("S matrix" . "{S} matrix")
-             ("AdS */ *CFT" . "{AdS/CFT}")
-             ("AdS_?4 */ *CFT_?3" . "{AdS$_4$/CFT$_3$}")
+             ("Sitter" . "{S}itter")
+;             ("S-matrix" . "{S}-matrix")
+;             ("S matrix" . "{S} matrix")
+             ("AdS */ *CFT" . "{A}d{S/CFT}")
+             ("AdS_?4 */ *CFT_?3" . "{A}d{S$_4$/CFT$_3$}")
+             ("AdS(3) */ *CFT(2)" . "{A}d{S(3)/CFT(2)}")
              ("SU(2) *x *SU(2)" . "{$SU(2) \\\\times SU(2)$}")
-             ("M2" . "{M2}")
-             ("IIA" . "{IIA}")
-             ("IIB" . "{IIB}")
-             ("ABJ" . "{ABJ}")
-             ("{ABJ}M" . "{ABJM}")
-             ("CP^3[^$]" . "{$\\\\CP^3$}"))))
+;             ("M2" . "{M2}")
+;             ("IIA" . "{IIA}")
+;             ("IIB" . "{IIB}")
+;             ("ABJ" . "{ABJ}")
+;             ("{ABJ}M" . "{ABJM}")
+             ("CP^3[^$]" . "{$\\\\CP^3$}")
+;             ("TBA" . "{TBA}")
+;             ("Y-" . "{Y}-")
+
+             ("^\\([A-Z0-9]+\\)-" . "{\\1}-")
+             (" \\([A-Z0-9]+\\)-" . " {\\1}-")
+
+             ("^\\([A-Z0-9]+\\) " . "{\\1} ")
+             (" \\([A-Z0-9]+\\) " . " {\\1} ")
+             (" \\([A-Z0-9]+\\)$" . " {\\1}")
+
+             )))
 
            (dolist (repl replacements)
              (ep-replace-regexp (car repl) (cdr repl))))
@@ -1195,8 +1245,9 @@ entries are extracted."
     (ep-alist-set "title" entry (buffer-substring (point-min) (point-max)))))
 
 (defun ep-spires-query-entries (query)
-  "Perform a Apires QUERY. Return a list of entries."
+  "Perform a Spires QUERY. Return a list of entries."
   (save-current-buffer
+    (message (concat "Querying Spires for '" query "'"))
     (let* ((url (ep-spires-url query))
            (query-buf (url-retrieve-synchronously url))
            entries)
@@ -1206,7 +1257,6 @@ entries are extracted."
       (goto-char (point-min))
       (let* ((start (progn (search-forward "<!-- START RESULTS -->\n" nil 't) (point)))
              (end (progn (search-forward "<!-- END RESULTS -->" nil 't) (- (point) 21))))
-        (message "%S" (cons start end))
         (when (< start end)
           (narrow-to-region start end)
           (setq entries (ep-bib-parse-buffer query-buf))))
@@ -1219,6 +1269,7 @@ entries are extracted."
   "Insert entries returned by a Spires query. Called by `url-retrieve' in `ep-search'."
   (let ((entries (ep-spires-extract-entries (current-buffer)))
         point)
+    (message "Inserting matches from Spires")
     (when (buffer-live-p buf)
       (switch-to-buffer buf)
       (setq point (point))
@@ -1240,6 +1291,7 @@ entries are extracted."
               (entries (ep-ep-filter-entries (ep-ep-extract-entries ep-main-buffer) ep-query)))
          (ep-ep-format-entries entries))
        (ep-ep-insert-sub-heading "Spires results"))
+    (message (concat "Looking up '" query "' at Spires"))
     (url-retrieve url 'ep-spires-query-callback (list (current-buffer)))))
 
 (defun ep-ep-search-parse-query (query)
@@ -1279,7 +1331,7 @@ non-nil, replace any exisitng fields."
      ((not query) (message "%s" "The current entry has no key and no preprint number"))
      ((not spires-entry) (message "%s" "The current entry was not found on Spires"))
      (t
-      (ep-spires-fix-title spires-entry)
+      (ep-ep-fix-title spires-entry)
       (dolist (field spires-entry)
         (if (not overwrite)
             (ep-alist-insert (car field) entry (cdr field))
