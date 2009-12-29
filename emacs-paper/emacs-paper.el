@@ -280,7 +280,6 @@ The file is not saved."
   (insert "\n")
   (insert (bibtex-entry-right-delimiter)))
 
-
 (defun ep-bib-find-file ()
   "Go to the BiBTeX-file visited by the Emacs Paper buffer."
   (interactive)
@@ -376,6 +375,8 @@ nil. Return t if anything was inserted, otherwise nil."
       (ep-ep-insert-non-nil "Comments: " (ep-field-value "arxiv-comment" entry) "\n")
       (insert "\n")
       (insert (ep-field-value "abstract" entry)))
+
+    (ep-ep-insert-non-nil "Note: " (ep-field-value "note" entry) "\n")
     
     (put-text-property start (point) :ep-entry entry)))
 
