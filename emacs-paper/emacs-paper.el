@@ -7,6 +7,14 @@
   "Main BibTeX database used by Emacs Paper."
   :type 'string)
 
+(defcustom ep-pdf-dir nil
+  "Directory for storing PDF-files."
+  :type '(restricted-sexp :match-alternatives (stringp 'nil)))
+
+(defcustom ep-pdf-file nil
+  "File for storing the list of PDF-files."
+  :type '(restricted-sexp :match-alternatives (stringp 'nil)))
+
 (defcustom ep-arxiv-default-category "hep-th"
   "Default arXiv category to use when checking for new articles."
   :type 'string)
@@ -65,6 +73,8 @@
 (defvar ep-ep-file-buffers nil
   "List of all Emacs Paper buffer visiting files.")
 
+(defvar ep-pdf-list '(nil))
+
 ;;; General helper functions 
 
 (defmacro ep-message (fmt &rest args)
@@ -92,7 +102,9 @@
 entry for KEY."
   (unless (ep-alist-get-value key alist)
     (if (not (assoc key alist))
-        (setcdr (last alist) (list (cons key val)))
+        (if (caar alist)
+            (setcdr (last alist) (list (cons key val)))
+          (setcar alist (cons key val)))
       (setcdr (assoc key alist) val)
       (list (cons key val)))))
 
@@ -906,22 +918,22 @@ current entry."
 
 ;;; Find entry online
 
-(defun ep-goto ()
+(defun ep-goto (&optional arg)
   "Find this entry online. Query the user about how to look for the entry."
-  (interactive)
+  (interactive "P")
   (let* ((collection '(("arXiv abstract" . 1) ("DOI" . 2) ("Spires record" . 3) ("PDF" . 4)))
          (completion-ignore-case t)
          (answer (completing-read "Go to: " collection nil t)))
     (case (cdr (assoc answer collection))
-      (1 (ep-goto-arxiv-abstract))
-      (2 (ep-goto-doi))
-      (3 (ep-goto-spires))
-      (4 (ep-goto-arxiv-pdf))
+      (1 (ep-goto-arxiv-abstract arg))
+      (2 (ep-goto-doi arg))
+      (3 (ep-goto-spires arg))
+      (4 (ep-goto-pdf arg))
       (otherwise (error "Cannot go to '%s'" answer)))))
 
-(defun ep-goto-arxiv-abstract ()
+(defun ep-goto-arxiv-abstract (&optional arg)
   "Go to the arXiv abstract page of the current entry."
-  (interactive)
+  (interactive "P")
   (let* ((entry ep-ep-current-entry)
          (url (ep-ep-concat-non-nil ep-arxiv-url "/abs/" (ep-alist-get-value "eprint" entry))))
     (if url
@@ -929,19 +941,19 @@ current entry."
       (message "There is no preprint number for this entry. Trying at Spires.")
       (ep-goto-spires))))
 
-(defun ep-goto-arxiv-pdf ()
-  "Go to the arXiv PDF of the current entry."
-  (interactive)
-  (let* ((entry ep-ep-current-entry)
-         (url (ep-ep-concat-non-nil ep-arxiv-url "/pdf/" (ep-alist-get-value "eprint" entry))))
-    (if url
-        (browse-url url)
-      (message "There is no preprint number for this entry. Trying using DOI.")
-      (ep-goto-doi))))
+;; (defun ep-goto-arxiv-pdf ()
+;;   "Go to the arXiv PDF of the current entry."
+;;   (interactive)
+;;   (let* ((entry ep-ep-current-entry)
+;;          (url (ep-ep-concat-non-nil ep-arxiv-url "/pdf/" (ep-alist-get-value "eprint" entry))))
+;;     (if url
+;;         (browse-url url)
+;;       (message "There is no preprint number for this entry. Trying using DOI.")
+;;       (ep-goto-doi))))
 
-(defun ep-goto-spires ()
+(defun ep-goto-spires (&optional arg)
   "Go to the Spires record of the current entry."
-  (interactive)
+  (interactive "P")
   (let* ((entry ep-ep-current-entry)
          (query (or (ep-alist-get-value "=key=" entry)
                     (ep-alist-get-value "eprint" entry)))
@@ -951,9 +963,9 @@ current entry."
       (message "There is no preprint number for this entry. Trying using DOI.")
       (ep-goto-doi))))
  
-(defun ep-goto-doi ()
+(defun ep-goto-doi (&optional arg)
   "Follow the DOI of the current entry."
-  (interactive)
+  (interactive "P")
   (let* ((entry ep-ep-current-entry)
          (url (ep-ep-concat-non-nil "http://dx.doi.org/" (ep-alist-get-value "doi" entry))))
     (if url
@@ -1226,7 +1238,7 @@ entries are extracted."
 ;             ("IIB" . "{IIB}")
 ;             ("ABJ" . "{ABJ}")
 ;             ("{ABJ}M" . "{ABJM}")
-             ("CP^3[^$]" . "{$\\\\CP^3$}")
+             ("CP^3\\([^$]\\)" . "{$\\\\CP^3$}\\1")
 ;             ("TBA" . "{TBA}")
 ;             ("Y-" . "{Y}-")
 
@@ -1349,7 +1361,9 @@ non-nil, replace any exisitng fields."
    ((and (y-or-n-p "Emacs Paper main buffer is already open. Reread the main BibTeX file? (This will kill the buffer).")
          (kill-buffer ep-main-buffer))
     (setq ep-main-buffer (ep-bib-load-file ep-main-bib-file)))
-   (t (switch-to-buffer ep-main-buffer))))
+   (t (switch-to-buffer ep-main-buffer)))
+  (when ep-pdf-file
+    (ep-pdf-read-file ep-pdf-file)))
   
 
 (defun ep-quit ()
@@ -1361,3 +1375,86 @@ non-nil, replace any exisitng fields."
       (message "Closing Emacs Paper buffer")
       (when (eq buffer ep-main-buffer)
         (setq ep-main-buffer nil)))))
+
+
+;; Handling PDF files
+
+(defun ep-url-retrieve-file (url filename)
+  (shell-command (concat "curl -s " url " -o " filename)))
+
+(defun ep-pdf-read-file (filename)
+  (let* ((xml-buffer (find-file-literally filename))
+         (root (xml-parse-region (point-min) (point-max)))
+         (papers (car root)))
+    ;; Don't clutter the file name history
+    (when (string= (car file-name-history) filename)
+      (setq file-name-history (cdr file-name-history)))
+
+    (kill-buffer xml-buffer)
+    
+    (setq ep-pdf-list nil)
+
+    (dolist (paper (xml-get-children papers 'paper))
+      (let ((key (caddar (xml-get-children paper 'key)))
+            (pdf (caddar (xml-get-children paper 'pdf))))
+        (push (cons key pdf) ep-pdf-list)))))
+
+(defun ep-pdf-write-file (filename)
+  (let ((xml-buffer (find-file-literally filename)))
+
+    (erase-buffer)
+
+    (insert "<?xml version=\"1.0\" encoding=\"utf-8\"?>\n")
+    (insert "<papers>\n")
+    (dolist (paper ep-pdf-list)
+      (when (car paper)
+        (insert "  <paper>\n")
+        (insert "    <key>")
+        (insert (car paper))
+        (insert "</key>\n")
+        (insert "    <pdf>")
+        (insert (cdr paper))
+        (insert "</pdf>\n")
+        (insert "  </paper>\n")))
+    (insert "</papers>\n")
+    (save-buffer)
+    ;; Don't clutter the file name history
+    (when (string= (car file-name-history) filename)
+      (setq file-name-history (cdr file-name-history)))
+    (kill-buffer)))
+
+(defun ep-open-pdf (filename)
+  (shell-command (format "open \"%s\"" (expand-file-name filename))))
+
+(defun ep-goto-pdf (overwrite)
+  (interactive "P")
+  (let* ((entry ep-ep-current-entry)
+         (key (ep-alist-get-value "=key=" entry))
+         (eprint (ep-alist-get-value "eprint" entry))
+         (pdf (ep-alist-get-value key ep-pdf-list)))
+    (if (and pdf (not overwrite))
+        (ep-open-pdf (concat ep-pdf-dir "/" pdf))
+      (message "Fetching %s" key)
+
+      (if eprint
+          (let* ((url (ep-ep-concat-non-nil ep-arxiv-url "/pdf/" eprint))
+                 (pdfname (concat eprint ".pdf"))
+                 (filename (concat ep-pdf-dir "/" pdfname)))
+            (if (not (and ep-pdf-file ep-pdf-dir (equal (current-buffer) ep-main-buffer)))
+                (browse-url url)
+              (ep-url-retrieve-file url filename)
+              (ep-open-pdf filename)
+              (ep-alist-set key ep-pdf-list pdfname)
+              (ep-pdf-write-file ep-pdf-file)))
+        (message "There is no preprint number for this entry. Trying using DOI. You need to manually save the PDF.")
+        (ep-goto-doi))
+      )))
+
+(defun ep-add-pdf (filename)
+  (interactive
+   (list (read-file-name "PDF file: " ep-pdf-dir nil t)))
+  (let* ((entry ep-ep-current-entry)
+         (key (ep-alist-get-value "=key=" entry))
+         (pdfname (file-relative-name filename ep-pdf-dir)))
+    (ep-alist-set key ep-pdf-list pdfname)
+    (ep-pdf-write-file ep-pdf-file)))
