@@ -97,24 +97,26 @@
 	   (equal (match-beginning 0) 0)
 	   (equal (match-end 0) (length string))))
 
-(defun ep-alist-insert (key alist val)
+(defmacro ep-alist-insert (key alist val)
   "Insert (KEY . VAL) into alist, unless there already is an
-entry for KEY."
-  (unless (ep-alist-get-value key alist)
-    (if (not (assoc key alist))
-        (if (caar alist)
-            (setcdr (last alist) (list (cons key val)))
-          (setcar alist (cons key val)))
-      (setcdr (assoc key alist) val)
-      (list (cons key val)))))
+entry for KEY.
+WARNING: evaluates the parameters more than once! Fix this!"
+  `(unless (ep-alist-get-value ,key ,alist)
+     (if (not (assoc ,key ,alist))
+         (if ,alist
+             (setcdr (last ,alist) (list (cons ,key ,val)))
+           (setq ,alist (list (cons ,key ,val))))
+       (setcdr (assoc ,key ,alist) ,val)
+       (list (cons ,key ,val)))))
 
-(defun ep-alist-set (key alist val)
+(defmacro ep-alist-set (key alist val)
   "Set the value of KEY in ALIST to VAL. Add the entry if it does
-not exist."
-  (let ((field (assoc key alist)))
+not exist.
+WARNING: evaluates the parameters more than once! Fix this!"
+  `(let ((field (assoc ,key ,alist)))
     (if field
-         (setcdr field val)
-      (ep-alist-insert key alist val))))
+         (setcdr field ,val)
+      (ep-alist-insert ,key ,alist ,val))))
 
 (defun ep-alist-get-value (key alist)
   "Get the value of KEY in ALIST."
@@ -1422,7 +1424,7 @@ non-nil, replace any exisitng fields."
     ;; Don't clutter the file name history
     (when (string= (car file-name-history) filename)
       (setq file-name-history (cdr file-name-history)))
-    (kill-buffer)))
+    (kill-buffer xml-buffer)))
 
 (defun ep-open-pdf (filename)
   (shell-command (format "open \"%s\"" (expand-file-name filename))))
