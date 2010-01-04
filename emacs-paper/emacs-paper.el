@@ -101,22 +101,26 @@
   "Insert (KEY . VAL) into alist, unless there already is an
 entry for KEY.
 WARNING: evaluates the parameters more than once! Fix this!"
-  `(unless (ep-alist-get-value ,key ,alist)
-     (if (not (assoc ,key ,alist))
-         (if ,alist
-             (setcdr (last ,alist) (list (cons ,key ,val)))
-           (setq ,alist (list (cons ,key ,val))))
-       (setcdr (assoc ,key ,alist) ,val)
-       (list (cons ,key ,val)))))
+  `(let ((local-key ,key)
+         (local-val ,val))
+     (unless (ep-alist-get-value local-key ,alist)
+       (if (not (assoc local-key ,alist))
+           (if ,alist
+               (setcdr (last ,alist) (list (cons local-key local-val)))
+             (setq ,alist (list (cons local-key local-val))))
+         (setcdr (assoc local-key ,alist) local-val))
+       (list (cons local-key local-val)))))
 
 (defmacro ep-alist-set (key alist val)
   "Set the value of KEY in ALIST to VAL. Add the entry if it does
 not exist.
 WARNING: evaluates the parameters more than once! Fix this!"
-  `(let ((field (assoc ,key ,alist)))
-    (if field
-         (setcdr field ,val)
-      (ep-alist-insert ,key ,alist ,val))))
+  `(let* ((local-key ,key)
+          (local-val ,val)
+          (local-field (assoc local-key ,alist)))
+    (if local-field
+         (setcdr local-field local-val)
+      (ep-alist-insert local-key ,alist local-val))))
 
 (defun ep-alist-get-value (key alist)
   "Get the value of KEY in ALIST."
@@ -772,9 +776,12 @@ then go to the first entry and turn on Emacs Paper mode."
 
     (if  (not new-entry)
         (message "Canceled")
+      (message "Old entry: %S" entry)
       (ep-alist-clear entry)
       (dolist (field new-entry)
+        (message "%S - %S" field entry)
         (ep-alist-set (car field) entry (cdr field)))
+      (message "New entry: %S" entry)
 
       (ep-ep-update-entry entry))))
 
@@ -1306,7 +1313,7 @@ entries are extracted."
               (entries (ep-ep-filter-entries (ep-ep-extract-entries ep-main-buffer) ep-query)))
          (ep-ep-format-entries entries))
        (ep-ep-insert-sub-heading "Spires results"))
-    (message (concat "Looking up '" query "' at Spires"))
+    (message (concat "Looking up '" spires-query "' at Spires"))
     (url-retrieve url 'ep-spires-query-callback (list (current-buffer)))))
 
 (defun ep-ep-search-parse-query (query)
@@ -1385,7 +1392,7 @@ non-nil, replace any exisitng fields."
 (defun ep-url-retrieve-file (url filename)
   (let ((cmd (concat "curl " url " -s -S -f --create-dirs -o " filename))
         status)
-    (message "Running %s" cmd)
+;;    (message "Running %s" cmd)
     (setq status (shell-command cmd))
     (equal status 0)))
 
