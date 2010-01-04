@@ -80,7 +80,7 @@
 (defmacro ep-message (fmt &rest args)
   `(progn
      (when ep-message-cmd
-       (shell-command (concat ep-ep-message-cmd "\"" (format ,fmt ,@args) "\"")))
+       (shell-command (concat ep-message-cmd "\"" (format ,fmt ,@args) "\"")))
      (message ,fmt ,@args)))
 
 (defun ep-cleanup-whitespace (string)
@@ -1435,7 +1435,7 @@ non-nil, replace any exisitng fields."
          (pdf (ep-alist-get-value key ep-pdf-list)))
     (if (and pdf (not overwrite))
         (ep-open-pdf (concat ep-pdf-dir "/" pdf))
-      (message "Fetching %s" key)
+      (message "Fetching %s" (or key ""))
 
       (if eprint
           (let* ((url (ep-ep-concat-non-nil ep-arxiv-url "/pdf/" eprint))
