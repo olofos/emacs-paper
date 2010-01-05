@@ -776,12 +776,10 @@ then go to the first entry and turn on Emacs Paper mode."
 
     (if  (not new-entry)
         (message "Canceled")
-      (message "Old entry: %S" entry)
+
       (ep-alist-clear entry)
       (dolist (field new-entry)
-        (message "%S - %S" field entry)
         (ep-alist-set (car field) entry (cdr field)))
-      (message "New entry: %S" entry)
 
       (ep-ep-update-entry entry))))
 
@@ -1252,12 +1250,16 @@ entries are extracted."
 ;             ("TBA" . "{TBA}")
 ;             ("Y-" . "{Y}-")
 
+             ("AdS" . "{A}d{S}")
+
              ("^\\([A-Z0-9]+\\)-" . "{\\1}-")
              (" \\([A-Z0-9]+\\)-" . " {\\1}-")
 
              ("^\\([A-Z0-9]+\\) " . "{\\1} ")
              (" \\([A-Z0-9]+\\) " . " {\\1} ")
              (" \\([A-Z0-9]+\\)$" . " {\\1}")
+
+             ("{A} " . "A ")
 
              )))
 
