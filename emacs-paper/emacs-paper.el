@@ -26,8 +26,9 @@
   :type 'color)
 
 (defcustom ep-spires-url 
-;; "http://www-library.desy.de/cgi-bin/spiface/find/hep/www?rawcmd="
-  "http://www.slac.stanford.edu/spires/find/hep/www?rawcmd="
+  "http://www-spires.dur.ac.uk/cgi-bin/spiface/hep/www?rawcmd="
+;;  "http://www-library.desy.de/cgi-bin/spiface/find/hep/www?rawcmd="
+;;  "http://www.slac.stanford.edu/spires/find/hep/www?rawcmd="
   "Base URL used for Spires queries."
   :type 'string)
 
@@ -802,6 +803,7 @@ to the current entry."
   (let* ((entry (or entry ep-ep-current-entry))
          (tags-val (ep-field-value "ep-tags" entry))
          (tags (and tags-val (split-string tags-val ",")))
+         (completion-ignore-case t)
          (tag (or tag (completing-read "Add tag: " ep-ep-common-tags nil nil)))
          new-tags)
     (if (member tag tags)
@@ -1173,7 +1175,7 @@ arXiv."
                                               ; (default to hep-th)
          ((oos-string-match-full "[a-z\\-]+/[0-9]\\{7\\}" key) 
           (concat "FIND+EPRINT+" key))        ; Match old arxiv identifier
-         ((oos-string-match-full "[A-Z][a-z]*:[0-9]\\{4\\}[a-z]\\{2\\}[a-z]?" key) 
+         ((oos-string-match-full "[A-Za-z']*:[0-9]\\{4\\}[a-z]\\{2\\}[a-z]?" key) 
           (concat "FIND+TEXKEY+" key))        ; Match SPIRES key
          (t
           (concat "FIND+A+" key)))))          ; Default to author search
@@ -1235,6 +1237,7 @@ entries are extracted."
              ("Hirota" . "{H}irota")
              ("Baxter" . "{B}axter")
              ("Sitter" . "{S}itter")
+             ("Wilson" . "{W}ilson")
 ;             ("S-matrix" . "{S}-matrix")
 ;             ("S matrix" . "{S} matrix")
              ("AdS */ *CFT" . "{A}d{S/CFT}")
@@ -1250,7 +1253,7 @@ entries are extracted."
 ;             ("TBA" . "{TBA}")
 ;             ("Y-" . "{Y}-")
 
-             ("AdS" . "{A}d{S}")
+             ("\\([^\\]\\)AdS" . "\\1{A}d{S}")
 
              ("^\\([A-Z0-9]+\\)-" . "{\\1}-")
              (" \\([A-Z0-9]+\\)-" . " {\\1}-")
