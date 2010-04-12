@@ -1092,10 +1092,11 @@ to new, cross listed and updated articles."
         (erase-buffer)
         (insert title)
         (search-backward-regexp "(arXiv:\\([^ ]*\\) \\(\\[[^]]*\\]\\)? ?\\([^)]*\\))" nil t)
-        (cond ((string-equal (match-string 3) "CROSS LISTED")
-               (setq cross-list (cons (match-string 1) cross-list)))
-              ((string-equal (match-string 3) "UPDATED")
+
+        (cond ((string-equal (match-string 3) "UPDATED")
                (setq updated-list (cons (match-string 1) updated-list)))
+              ((not (string-equal (match-string 2) (concat "[" category "]")))
+               (setq cross-list (cons (match-string 1) cross-list)))
               (t
                (setq new-list (cons (match-string 1) new-list))))))
 
