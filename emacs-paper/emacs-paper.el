@@ -322,7 +322,7 @@ The file is not saved."
       (let ((field-value (ep-field-value field-name entry)))
         (if field-value
             (bibtex-make-field (list field-name nil field-value nil)))))
-  (insert "\n"))
+    (insert "\n"))
   (insert (bibtex-entry-right-delimiter)))
 
 (defun ep-bib-find-file ()
@@ -380,7 +380,7 @@ nil. Return t if anything was inserted, otherwise nil."
                                                       'face '(:slant italic :height 0.8)) "\n"))
      ((string= (ep-field-value "=type=" entry) "String")
       (ep-ep-insert-non-nil (ep-ep-propertize-non-nil (ep-field-value "=content=" entry)
-                                                      'face '(:slant italic)) "\n"))
+                                                      'face '(:slant italic))))
      (t
       (or (ep-ep-insert-non-nil (ep-field-value "=key=" entry) "\n")
           (ep-ep-insert-non-nil (ep-field-value "eprint" entry)  " "
@@ -436,17 +436,24 @@ nil. Return t if anything was inserted, otherwise nil."
 (defun ep-ep-format-entries (entries)
   "Insert ENTRIES in current buffer."
   (let ((seen-preamble nil)
-        (seen-string nil))
+        (seen-string nil)
+        (seen-other nil))
     (dolist (entry entries)
-      (when (and (not seen-preamble) 
-                 (string= (ep-alist-get-value "=type=" entry) "Preamble"))
-             (setq seen-preamble t)
-             (insert "\n" (propertize "Preamble:" 'face '(:weight bold :height 1.1))))
-      (when (and (not seen-string) 
-                 (string= (ep-alist-get-value "=type=" entry) "String"))
-             (setq seen-string t)
-             (insert "\n" (propertize "Strings:" 'face '(:weight bold :height 1.1))))
-      (ep-ep-format-entry entry))))
+      (let ((entry-type (ep-alist-get-value "=type=" entry)))
+        (cond 
+         ((string= entry-type "Preamble")
+          (when (not seen-preamble)
+            (setq seen-preamble t)
+            (insert "\n" (propertize "Preamble" 'face '(:weight bold :height 1.1 :underline t)) "\n")))
+         ((string= entry-type "String")
+          (when (not seen-string) 
+            (setq seen-string t)
+            (insert "\n" (propertize "Strings" 'face '(:weight bold :height 1.1 :underline t)) "\n")))
+         (t
+          (when (and (not seen-other) (or seen-preamble seen-string))
+            (setq seen-other t)
+            (insert "\n" (propertize "References" 'face '(:weight bold :height 1.1 :underline t)) "\n"))))
+        (ep-ep-format-entry entry)))))
 
 (defun ep-ep-insert-main-heading (heading)
   "Insert HEADING in current buffer."
@@ -585,8 +592,6 @@ point. With a non-nil argument, skip N entries backwards."
       (setq key "=key="))
 
     (ep-ep-redraw-entries (ep-sort-function key))))
-
-
 
 (defun ep-ep-redraw-entries (&optional func)
   "Redraw all entries. FUNC should be a function taking as a
