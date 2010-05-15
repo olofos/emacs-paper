@@ -156,6 +156,10 @@ buffer."
          (entries (ep-bib-parse-buffer file-buf)))
     (if (not entries)
         (message "No BibTeX entries found in %s" file)
+
+    ;; Sort the entries so that 'Preamble' and 'String' entries are at the top
+      (setq entries (funcall (ep-sort-function "==unused==") entries))
+
       (ep-ep-new-buffer (concat "EP:" (file-name-nondirectory file))
         (ep-ep-insert-main-heading (concat "Emacs Paper -- " (file-name-nondirectory file)))
         (ep-ep-format-entries entries))
@@ -168,6 +172,7 @@ buffer."
       (unless (member 'ep-ep-kill-emacs-query-function kill-emacs-query-functions)
         (push 'ep-ep-kill-emacs-query-function kill-emacs-query-functions)))
     (kill-buffer file-buf)
+
     (current-buffer)))
 
 (defun ep-bib-save-file (&optional buffer)
@@ -182,7 +187,9 @@ buffer."
     (let ((entries (ep-ep-extract-entries))
           no-key)
       (while (and entries (not no-key))
-        (unless (ep-field-value "=key=" (car entries))
+        (unless (or (ep-field-value "=key=" (car entries)) 
+                    (string= (ep-field-value "=type=" (car entries)) "Preamble")
+                    (string= (ep-field-value "=type=" (car entries)) "String"))
           (setq no-key (car entries)))
         (pop entries))
       (when no-key
@@ -232,13 +239,41 @@ parsed entries."
       (save-excursion
         (goto-char (point-min))
         
-        (while (search-forward "@" nil t)
+        (while (re-search-forward "^@" nil t)
           (backward-char)
-          (let* ((entry (bibtex-parse-entry t)))
-            (dolist (field entry)
-              (setcdr field (ep-cleanup-whitespace (cdr field))))
-            (push entry entries))
-          (progress-reporter-update progress (point)))
+          (cond
+           ;; Preamble entry
+           ((looking-at bibtex-preamble-prefix)
+            (let* ((parse-result (bibtex-parse-preamble))
+                   (bounds (cdr parse-result))
+                   (entry-end )
+                   (preamble-string (buffer-substring-no-properties (car bounds) (cadr bounds)))
+                   entry)
+              (ep-alist-insert "=type=" entry "Preamble")
+              (ep-alist-insert "=content=" entry preamble-string)
+              (push entry entries)
+              (goto-char (caddr bounds))
+              (progress-reporter-update progress (point))))
+           ;; String entry
+           ((looking-at bibtex-string-type)
+            (let* ((parse-result (bibtex-parse-string))
+                   (key-bounds (car parse-result))
+                   (key (buffer-substring-no-properties (cadr key-bounds) (caddr key-bounds)))
+                   (string-bounds (cdr parse-result))
+                   (string (buffer-substring-no-properties (car string-bounds) (cadr string-bounds)))
+                   (entry-end (caddr string-bounds))
+                   entry)
+              (ep-alist-insert "=type=" entry "String")
+              (ep-alist-insert "=content=" entry (concat key " = " string))
+              (goto-char entry-end)
+              (push entry entries)
+            ))
+           (t
+            (let* ((entry (bibtex-parse-entry t)))
+              (dolist (field entry)
+                (setcdr field (ep-cleanup-whitespace (cdr field))))
+              (push entry entries))
+            (progress-reporter-update progress (point)))))
         (progress-reporter-done progress)
         (nreverse entries)))))
 
@@ -279,12 +314,15 @@ The file is not saved."
 (defun ep-bib-format-entry (entry)
   "Insert ENTRY in current buffer."
   (insert "@" (ep-field-value "=type=" entry) (bibtex-entry-left-delimiter))
-  (insert (ep-field-value "=key=" entry))
-  (dolist (field-name ep-bib-fields)
-    (let ((field-value (ep-field-value field-name entry)))
-      (if field-value
-          (bibtex-make-field (list field-name nil field-value nil)))))
-  (insert "\n")
+  (ep-ep-insert-non-nil (ep-field-value "=key=" entry))
+
+  (if (ep-alist-get-value "=content=" entry)
+      (insert (ep-alist-get-value "=content=" entry))
+    (dolist (field-name ep-bib-fields)
+      (let ((field-value (ep-field-value field-name entry)))
+        (if field-value
+            (bibtex-make-field (list field-name nil field-value nil)))))
+  (insert "\n"))
   (insert (bibtex-entry-right-delimiter)))
 
 (defun ep-bib-find-file ()
@@ -336,61 +374,79 @@ nil. Return t if anything was inserted, otherwise nil."
   "Insert ENTRY nicely fromatted into current buffer."
   (insert "\n")
   (let* ((start (point)))
-    (or (ep-ep-insert-non-nil (ep-field-value "=key=" entry) "\n")
-        (ep-ep-insert-non-nil (ep-field-value "eprint" entry)  " "
-                              "[" (ep-field-value "primaryClass" entry) "]" "\n")
-        (ep-ep-insert-non-nil " " (ep-field-value "eprint" entry)  "\n"))
-    
-    (ep-ep-insert-non-nil (ep-ep-propertize-non-nil 
-                           (ep-field-value "title" entry) 
-                           'face '(:weight bold :slant italic :height 1.1)) "\n")
-    (ep-ep-insert-non-nil (ep-field-value "author" entry))
+    (cond 
+     ((string= (ep-field-value "=type=" entry) "Preamble")
+      (ep-ep-insert-non-nil (ep-ep-propertize-non-nil (ep-field-value "=content=" entry)
+                                                      'face '(:slant italic :height 0.8)) "\n"))
+     ((string= (ep-field-value "=type=" entry) "String")
+      (ep-ep-insert-non-nil (ep-ep-propertize-non-nil (ep-field-value "=content=" entry)
+                                                      'face '(:slant italic)) "\n"))
+     (t
+      (or (ep-ep-insert-non-nil (ep-field-value "=key=" entry) "\n")
+          (ep-ep-insert-non-nil (ep-field-value "eprint" entry)  " "
+                                "[" (ep-field-value "primaryClass" entry) "]" "\n")
+          (ep-ep-insert-non-nil " " (ep-field-value "eprint" entry)  "\n"))
+      
+      (ep-ep-insert-non-nil (ep-ep-propertize-non-nil 
+                             (ep-field-value "title" entry) 
+                             'face '(:weight bold :slant italic :height 1.1)) "\n")
+      (ep-ep-insert-non-nil (ep-field-value "author" entry))
 
-    (when (or (ep-field-value "year" entry) 
-              (ep-field-value "journal" entry)
-              (and (ep-field-value "=key=" entry) (ep-field-value "eprint" entry)))
-      (insert "\n"))
+      (when (or (ep-field-value "year" entry) 
+                (ep-field-value "journal" entry)
+                (and (ep-field-value "=key=" entry) (ep-field-value "eprint" entry)))
+        (insert "\n"))
     
-    (if (string-equal "JHEP" (ep-field-value "journal" entry))
-        (ep-ep-insert-non-nil (ep-ep-propertize-non-nil 
-                               (ep-field-value "journal" entry) 'face 'italic ) " " 
-                               (ep-ep-propertize-non-nil 
-                                (ep-ep-concat-non-nil 
-                                 (ep-ep-substring-non-nil (ep-field-value "year" entry) 2)
-                                 (ep-field-value "volume" entry))
-                                'face 'bold) ", "
-                               (ep-field-value "pages" entry) " ")
-      (ep-ep-insert-non-nil (ep-ep-propertize-non-nil (ep-field-value "journal" entry) 
-                                                      'face 'italic ) " "
-                            (ep-ep-propertize-non-nil (ep-field-value "volume" entry) 
-                                                      'face 'bold) ", "
-                            (ep-field-value "pages" entry) " "))
-    (ep-ep-insert-non-nil "(" (ep-field-value "year" entry) ")")
-    
-    (when (ep-field-value "=key=" entry)
-      (when (and (or (ep-field-value "journal" entry)
-                     (ep-field-value "year" entry))
-                 (ep-field-value "eprint" entry))
-            (insert ", "))
-      (or (ep-ep-insert-non-nil (ep-field-value "eprint" entry)  " "
-                                "[" (ep-field-value "primaryClass" entry) "]")
-          (ep-ep-insert-non-nil (ep-field-value "eprint" entry))))
-    (insert ".\n")
-    (ep-ep-insert-non-nil "Tags: " (ep-field-value "ep-tags" entry) "\n")
-
-    (when (ep-field-value "abstract" entry)
-      (ep-ep-insert-non-nil "Comments: " (ep-field-value "arxiv-comment" entry) "\n")
-      (insert "\n")
-      (insert (ep-field-value "abstract" entry)))
-
-    (ep-ep-insert-non-nil "Note: " (ep-field-value "note" entry) "\n")
-    
-    (put-text-property start (point) :ep-entry entry)))
+      (if (string-equal "JHEP" (ep-field-value "journal" entry))
+          (ep-ep-insert-non-nil (ep-ep-propertize-non-nil 
+                                 (ep-field-value "journal" entry) 'face 'italic ) " " 
+                                 (ep-ep-propertize-non-nil 
+                                  (ep-ep-concat-non-nil 
+                                   (ep-ep-substring-non-nil (ep-field-value "year" entry) 2)
+                                   (ep-field-value "volume" entry))
+                                  'face 'bold) ", "
+                                  (ep-field-value "pages" entry) " ")
+        (ep-ep-insert-non-nil (ep-ep-propertize-non-nil (ep-field-value "journal" entry) 
+                                                        'face 'italic ) " "
+                                                        (ep-ep-propertize-non-nil (ep-field-value "volume" entry) 
+                                                                                  'face 'bold) ", "
+                                                                                  (ep-field-value "pages" entry) " "))
+      (ep-ep-insert-non-nil "(" (ep-field-value "year" entry) ")")
+      
+      (when (ep-field-value "=key=" entry)
+        (when (and (or (ep-field-value "journal" entry)
+                       (ep-field-value "year" entry))
+                   (ep-field-value "eprint" entry))
+          (insert ", "))
+        (or (ep-ep-insert-non-nil (ep-field-value "eprint" entry)  " "
+                                  "[" (ep-field-value "primaryClass" entry) "]")
+            (ep-ep-insert-non-nil (ep-field-value "eprint" entry))))
+      (insert ".\n")
+      (ep-ep-insert-non-nil "Tags: " (ep-field-value "ep-tags" entry) "\n")
+      
+      (when (ep-field-value "abstract" entry)
+        (ep-ep-insert-non-nil "Comments: " (ep-field-value "arxiv-comment" entry) "\n")
+        (insert "\n")
+        (insert (ep-field-value "abstract" entry)))
+      
+      (ep-ep-insert-non-nil "Note: " (ep-field-value "note" entry) "\n")))
+     
+     (put-text-property start (point) :ep-entry entry)))
 
 (defun ep-ep-format-entries (entries)
   "Insert ENTRIES in current buffer."
-  (dolist (entry entries)
-    (ep-ep-format-entry entry)))
+  (let ((seen-preamble nil)
+        (seen-string nil))
+    (dolist (entry entries)
+      (when (and (not seen-preamble) 
+                 (string= (ep-alist-get-value "=type=" entry) "Preamble"))
+             (setq seen-preamble t)
+             (insert "\n" (propertize "Preamble:" 'face '(:weight bold :height 1.1))))
+      (when (and (not seen-string) 
+                 (string= (ep-alist-get-value "=type=" entry) "String"))
+             (setq seen-string t)
+             (insert "\n" (propertize "Strings:" 'face '(:weight bold :height 1.1))))
+      (ep-ep-format-entry entry))))
 
 (defun ep-ep-insert-main-heading (heading)
   "Insert HEADING in current buffer."
@@ -502,19 +558,35 @@ point. With a non-nil argument, skip N entries backwards."
       (setq end (point-max)))
     (cons start end)))
 
+(defun ep-sort-function (key)
+  "Returns a function that sorts entrie by KEY."
+  (lexical-let ((key key))
+    (lambda (entries)
+      (sort entries (lambda (entry-a entry-b)
+                      (cond 
+                       ((string= (ep-alist-get-value "=type=" entry-b) "Preamble") nil)
+                       ((string= (ep-alist-get-value "=type=" entry-a) "Preamble") t)
+                       ((string= (ep-alist-get-value "=type=" entry-b) "String") nil)
+                       ((string= (ep-alist-get-value "=type=" entry-a) "String") t)
+                       (t
+                        (string-lessp (ep-alist-get-value key entry-a)
+                                      (ep-alist-get-value key entry-b)))))))))
+
 (defun ep-sort-entries (&optional key interactive)
   "Sort the entries in the current buffer, ordering them by KEY."
   (interactive "i\np")
   (let ((key (or key 
                  (if interactive
                      (completing-read "Sort by [BibTeX key]: " ep-bib-fields)
-                     "=key="))))
+                     "=key=")))
+        preambles)
+
     (when (string-equal key "")
       (setq key "=key="))
-    (ep-ep-redraw-entries (lambda (entries)
-                            (sort entries (lambda (entry-a entry-b)
-                                            (string-lessp (ep-alist-get-value key entry-a)
-                                                          (ep-alist-get-value key entry-b))))))))
+
+    (ep-ep-redraw-entries (ep-sort-function key))))
+
+
 
 (defun ep-ep-redraw-entries (&optional func)
   "Redraw all entries. FUNC should be a function taking as a
