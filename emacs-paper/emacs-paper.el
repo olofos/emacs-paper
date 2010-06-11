@@ -382,10 +382,15 @@ nil. Return t if anything was inserted, otherwise nil."
       (ep-ep-insert-non-nil (ep-ep-propertize-non-nil (ep-field-value "=content=" entry)
                                                       'face '(:slant italic))))
      (t
-      (or (ep-ep-insert-non-nil (ep-field-value "=key=" entry) "\n")
+      (or (ep-ep-insert-non-nil (ep-field-value "=key=" entry))
           (ep-ep-insert-non-nil (ep-field-value "eprint" entry)  " "
-                                "[" (ep-field-value "primaryClass" entry) "]" "\n")
-          (ep-ep-insert-non-nil " " (ep-field-value "eprint" entry)  "\n"))
+                                "[" (ep-field-value "primaryClass" entry) "]")
+          (ep-ep-insert-non-nil " " (ep-field-value "eprint" entry)))
+
+      (when (and (ep-field-value "=key=" entry) ep-pdf-list (ep-alist-get-value (ep-field-value "=key=" entry) ep-pdf-list))
+        (insert " (PDF)"))
+
+      (insert "\n")
       
       (ep-ep-insert-non-nil (ep-ep-propertize-non-nil 
                              (ep-field-value "title" entry) 
@@ -452,6 +457,8 @@ nil. Return t if anything was inserted, otherwise nil."
          (t
           (when (and (not seen-other) (or seen-preamble seen-string))
             (setq seen-other t)
+            (when seen-string
+              (insert "\n"))
             (insert "\n" (propertize "References" 'face '(:weight bold :height 1.1 :underline t)) "\n"))))
         (ep-ep-format-entry entry)))))
 
@@ -723,6 +730,8 @@ as (START . END)."
 (define-key ep-ep-mode-map "e" 'ep-edit-entry)
 (define-key ep-ep-mode-map "t" 'ep-add-tag)
 (define-key ep-ep-mode-map "T" 'ep-remove-tag)
+(define-key ep-ep-mode-map "\C-c\C-e" 'ep-new-entry)
+(define-key ep-ep-mode-map "\C-c\C-d" 'ep-delete-entry)
 
 (define-key ep-ep-mode-map "o" 'ep-sort-entries)
 
@@ -831,13 +840,9 @@ then go to the first entry and turn on Emacs Paper mode."
   (interactive)
   (throw 'ep-edit-quit nil))
 
-(defun ep-edit-entry (&optional entry)
-  "Edit ENTRY as a BibTeX entry. Default to editing the current entry."
-  (interactive)
-  (let* ((entry  (or entry ep-ep-current-entry))
-         (highlight (eq entry ep-ep-current-entry))
-         (edit-buffer (generate-new-buffer "EP edit entry"))
-         (ep-buffer (current-buffer))
+(defun ep-do-edit-entry (entry)
+  "Edit ENTRY as a BibTeX entry. Return the updated entry or nil if the edit was cancelled."
+  (let* ((edit-buffer (generate-new-buffer "EP edit entry"))
          new-entry)
     (switch-to-buffer edit-buffer)
     (buffer-disable-undo)
@@ -850,6 +855,14 @@ then go to the first entry and turn on Emacs Paper mode."
             (recursive-edit))
       (setq new-entry (car (ep-bib-parse-buffer edit-buffer))))
     (kill-buffer edit-buffer)
+    new-entry))
+
+(defun ep-edit-entry (&optional entry)
+  "Edit ENTRY as a BibTeX entry. Default to editing the current entry."
+  (interactive)
+  (let* ((entry  (or entry ep-ep-current-entry))
+         (ep-buffer (current-buffer))
+         (new-entry (ep-do-edit-entry entry)))
     (switch-to-buffer ep-buffer)
 
     (if  (not new-entry)
@@ -992,6 +1005,21 @@ current entry."
           (ep-ep-format-entry entry)
           (toggle-read-only 1)
           (message "Entry saved to '%s'" (buffer-name ep-main-buffer)))))))))
+
+(defun ep-new-entry ()
+  "Create a new entry in the current buffer and edit it."
+  (interactive)
+  (let ((entry '(("=type=" . "Article") ("author" . "") ("title" . ""))))
+    (ep-import-entry (ep-do-edit-entry entry))))
+
+(defun ep-delete-entry ()
+  "Deletes the current entry."
+  (interactive)
+  (when (and ep-ep-current-entry (y-or-n-p "Delete current entry? "))
+    (let ((boundaries (ep-ep-entry-boundaries ep-ep-current-entry)))
+      (toggle-read-only -1)
+      (delete-region (car boundaries) (+ (cdr boundaries) 1))
+      (toggle-read-only 1))))
          
 (defun ep-import-marked-entries ()
   "Import all marked entries to the main Emaca Paper buffer."
@@ -1186,7 +1214,6 @@ to new, cross listed and updated articles."
 arXiv."
   (interactive "i\nP")
   (let* ((entry (or entry ep-ep-current-entry))
-         (highlight (eq entry ep-ep-current-entry))
          (eprint (ep-alist-get-value "eprint" entry)))
     (message (concat "Looking up " eprint " on the arXiv"))
     (let ((arxiv-entry (when eprint (car (ep-arxiv-id-query (list eprint))))))
@@ -1427,7 +1454,6 @@ ENTRY is nil, default to the current entry. If OVERWRITE is
 non-nil, replace any exisitng fields."
   (interactive "i\nP")
   (let* ((entry (or entry ep-ep-current-entry))
-         (highlight (eq entry ep-ep-current-entry))
          (query (or(ep-alist-get-value "=key=" entry)
                    (ep-alist-get-value "eprint" entry)))
          (spires-entry (when query 
