@@ -1472,17 +1472,20 @@ non-nil, replace any exisitng fields."
 
 ;;  Main buffer
 
+(defun ep-main-start ()
+  (when ep-pdf-file
+    (ep-pdf-read-file ep-pdf-file))
+  (setq ep-main-buffer (ep-bib-load-file ep-main-bib-file)))
+
 (defun ep-main ()
   "Load the main Emacs Paper buffer."
   (interactive)
   (cond 
-   ((not (buffer-live-p ep-main-buffer)) (setq ep-main-buffer (ep-bib-load-file ep-main-bib-file)))
+   ((not (buffer-live-p ep-main-buffer)) (ep-main-start))
    ((and (y-or-n-p "Emacs Paper main buffer is already open. Reread the main BibTeX file? (This will kill the buffer).")
          (kill-buffer ep-main-buffer))
-    (setq ep-main-buffer (ep-bib-load-file ep-main-bib-file)))
-   (t (switch-to-buffer ep-main-buffer)))
-  (when ep-pdf-file
-    (ep-pdf-read-file ep-pdf-file)))
+    (ep-main-start))
+   (t (switch-to-buffer ep-main-buffer))))
   
 
 (defun ep-quit ()
