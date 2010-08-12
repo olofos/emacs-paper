@@ -15,6 +15,14 @@
   "File for storing the list of PDF-files."
   :type '(restricted-sexp :match-alternatives (stringp 'nil)))
 
+(defcustom ep-add-pdf-to-itunes-script nil
+  "Path to AppleScript to add papers to iTunes."
+  :type '(restricted-sexp :match-alternatives (stringp 'nil)))
+
+(defcustom ep-add-pdf-to-itunes-automatically nil
+  "Automatically add PDF files to iTunes"
+  :type 'boolean)
+
 (defcustom ep-arxiv-default-category "hep-th"
   "Default arXiv category to use when checking for new articles."
   :type 'string)
@@ -1571,11 +1579,9 @@ non-nil, replace any exisitng fields."
               (if (not (ep-url-retrieve-file url filename))
                   (message "Failed to retrieve file from %s." url)
                 (ep-open-pdf filename)
-                (ep-alist-set key ep-pdf-list pdfname)
-                (ep-pdf-write-file ep-pdf-file))))
+                (ep-add-pdf filename))))
         (message "There is no preprint number for this entry. Trying using DOI. You need to manually save the PDF.")
-        (ep-goto-doi))
-      )))
+        (ep-goto-doi)))))
 
 (defun ep-add-pdf (filename)
   (interactive
@@ -1584,4 +1590,26 @@ non-nil, replace any exisitng fields."
          (key (ep-alist-get-value "=key=" entry))
          (pdfname (file-relative-name filename ep-pdf-dir)))
     (ep-alist-set key ep-pdf-list pdfname)
-    (ep-pdf-write-file ep-pdf-file)))
+    (ep-pdf-write-file ep-pdf-file)
+    (when ep-add-pdf-to-itunes-automatically
+      (ep-add-pdf-to-itunes))
+    (ep-ep-update-entry)))
+
+
+(defun ep-add-pdf-to-itunes ()
+  (interactive)
+
+  (when ep-pdf-list
+    (if (not ep-add-pdf-to-itunes-script)
+        (message "Cannot find AppleScript to add entries to iTunes")
+      (let* ((entry ep-ep-current-entry)
+             (key (ep-alist-get-value "=key=" entry))
+             (title (ep-alist-get-value "title" entry))
+             (author (ep-alist-get-value "author" entry))
+             (year (ep-alist-get-value "year" entry))
+             (filename (ep-alist-get-value key ep-pdf-list))
+             (cmd (concat "osascript \"" ep-add-pdf-to-itunes-script "\" \"" ep-pdf-dir filename "\" \"" title "\" \"" author "\" " key " \"" year "\"" )))
+        (if (not filename)
+            (message "Entry %s does not have any associated PDF." key)
+          (message "Running %s" cmd)
+          (shell-command cmd))))))
