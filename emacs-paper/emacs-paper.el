@@ -1589,11 +1589,13 @@ non-nil, replace any exisitng fields."
   (let* ((entry ep-ep-current-entry)
          (key (ep-alist-get-value "=key=" entry))
          (pdfname (file-relative-name filename ep-pdf-dir)))
-    (ep-alist-set key ep-pdf-list pdfname)
-    (ep-pdf-write-file ep-pdf-file)
-    (when ep-add-pdf-to-itunes-automatically
-      (ep-add-pdf-to-itunes))
-    (ep-ep-update-entry)))
+    (if (not key)
+        (message "Cannot save a PDF for a paper without key.")
+      (ep-alist-set key ep-pdf-list pdfname)
+      (ep-pdf-write-file ep-pdf-file)
+      (when ep-add-pdf-to-itunes-automatically
+        (ep-add-pdf-to-itunes))
+      (ep-ep-update-entry entry))))
 
 
 (defun ep-add-pdf-to-itunes ()
