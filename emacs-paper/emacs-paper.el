@@ -25,7 +25,6 @@
 
 (defvar ep-fix-titles 't
   "*Should titles be 'fixed'?")
-(make-variable-buffer-local 'ep-fix-titles)
 
 (defcustom ep-arxiv-default-category "hep-th"
   "Default arXiv category to use when checking for new articles."
@@ -93,7 +92,8 @@ filename."
 (defvar ep-ep-file-buffers nil
   "List of all Emacs Paper buffer visiting files.")
 
-(defvar ep-pdf-list '(nil))
+(defvar ep-pdf-list '(nil)
+  "Mapping between BibTeX keys and PDF files.")
 
 ;;; General helper functions 
 
@@ -637,8 +637,9 @@ entries to draw. If FUNC is nil, it defaults to `identity'."
           (ep-ep-format-entries entries))
         (widen)))
     (toggle-read-only 1)
-    (goto-char (car (ep-ep-entry-boundaries current-entry)))
-    (ep-ep-highlight-entry)))
+    (when (and current-entry (car (ep-ep-entry-boundaries current-entry)))
+      (goto-char (car (ep-ep-entry-boundaries current-entry)))
+      (ep-ep-highlight-entry))))
 
 (defun ep-ep-filter-entries (entries filters)
   "Filter ENTRIES. FILTERS should be a list of cons-cells (BibTeX-field . regexp)."
@@ -689,6 +690,12 @@ with TAG."
           (ep-ep-insert-main-heading (concat "Entries in '" buffer-name "' with tags matching '" tag "'"))
           (ep-ep-format-entries entries)))))
 
+(defun ep-ep-goto-entry (entry)
+  "Move POINT to start of ENTRY."
+  (let ((boundaries (ep-ep-entry-boundaries entry)))
+    (when boundaries
+        (goto-char (car boundaries)))))
+
 (defun ep-ep-entry-boundaries (entry)
   "Return the start and end point of ENTRY in a cons cell
 as (START . END)."
@@ -729,6 +736,9 @@ as (START . END)."
   (font-lock-mode -1)
 
   (make-variable-buffer-local 'ep-ep-current-entry)
+  (set (make-variable-buffer-local 'ep-ep-undo-list) nil)
+  (set (make-variable-buffer-local 'ep-ep-redo-list) nil)
+  (make-variable-buffer-local 'ep-fix-titles)
 
   (set (make-variable-buffer-local 'ep-ep-highlight-overlay) (make-overlay (point) (point)))
   (overlay-put ep-ep-highlight-overlay 
@@ -751,7 +761,7 @@ as (START . END)."
 (define-key ep-ep-mode-map "T" 'ep-remove-tag)
 
 (define-key ep-ep-mode-map "\C-c\C-e" 'ep-new-entry)
-(define-key ep-ep-mode-map "\C-c\C-d" 'ep-kill-entry)
+(define-key ep-ep-mode-map "k" 'ep-kill-entry)
 
 (define-key ep-ep-mode-map "w" 'ep-copy-entry)
 (define-key ep-ep-mode-map "y" 'ep-yank-entry)
@@ -769,6 +779,9 @@ as (START . END)."
 
 (define-key ep-ep-mode-map "g" 'ep-goto)
 
+(define-key ep-ep-mode-map (kbd "C-/") 'ep-undo)
+(define-key ep-ep-mode-map (kbd "C-_") 'ep-undo)
+
 (define-derived-mode  ep-ep-edit-mode bibtex-mode "EP BibTeX edit"
   "Major mode for editing Emacs Paper BibTeX entries.
 \\\{ep-ep-edit-mode-map}")
@@ -783,6 +796,7 @@ then go to the first entry and turn on Emacs Paper mode."
   `(progn
      (let ((buf (generate-new-buffer ,name)))
        (switch-to-buffer buf)
+       (buffer-disable-undo)
        (progn ,@body)
        (set-buffer-modified-p nil)
        (toggle-read-only 1)
@@ -826,6 +840,7 @@ then go to the first entry and turn on Emacs Paper mode."
 
 (defun ep-ep-update-entry (entry)
   "Redraw ENTRY."
+
   (let* ((highlight (eq entry ep-ep-current-entry))
          (boundaries (ep-ep-entry-boundaries entry))
          (start (car boundaries))
@@ -891,11 +906,12 @@ then go to the first entry and turn on Emacs Paper mode."
     (if  (not new-entry)
         (message "Canceled")
 
-      (ep-ep-alist-clear entry)
-      (dolist (field new-entry)
-        (ep-ep-alist-set (car field) entry (cdr field)))
-
-      (ep-ep-update-entry entry))))
+      (unless (equal new-entry entry)
+        (ep-ep-register-undo-edit-entry entry)
+        (ep-ep-alist-clear entry)
+        (dolist (field new-entry)
+          (ep-ep-alist-set (car field) entry (cdr field)))
+        (ep-ep-update-entry entry)))))
 
 (defun ep-edit-tags (&optional entry)
   "Edit all tags of ENTRY using the minibuffer. Default to the
@@ -906,8 +922,10 @@ current entry."
          (new-tags (read-from-minibuffer "Tags: " tags)))
     (when (string-equal "" new-tags)
       (setq new-tags nil))
-    (ep-ep-alist-set "ep-tags" entry new-tags)
-    (ep-ep-update-entry entry)))
+    (unless (equal new-tags tags)
+      (ep-ep-register-undo-edit-entry entry)
+      (ep-ep-alist-set "ep-tags" entry new-tags)
+      (ep-ep-update-entry entry))))
 
 (defun ep-add-tag (&optional tag entry)
   "Add TAG to ENTRY. If TAG is not given, prompt for it. Default
@@ -924,6 +942,7 @@ to the current entry."
       (setq new-tags (mapconcat 'identity (cons tag tags) ","))
       (when (string-equal "" new-tags)
         (setq new-tags nil))
+      (ep-ep-register-undo-edit-entry entry)
       (ep-ep-alist-set "ep-tags" entry new-tags)
       (ep-ep-update-entry entry))))
 
@@ -947,6 +966,7 @@ it. Default to the current entry."
       (setq new-tags (mapconcat 'identity (delete tag tags) ","))
       (when (string-equal "" new-tags)
         (setq new-tags nil))
+      (ep-ep-register-undo-edit-entry entry)
       (ep-ep-alist-set "ep-tags" entry new-tags)
       (ep-ep-update-entry entry))))))
 
@@ -997,6 +1017,31 @@ MARK is 'unmark, unmark ENTRY."
       (ep-mark-entry entry (if unmark 'unmark 'mark)))
     (message "%d entries %s" (length entries) (if unmark "unmarked" "marked"))))
 
+(defun ep-ep-insert-entry (entry buffer)
+  (set-buffer buffer)
+  (let ((entries (ep-ep-extract-entries))
+        old-entry)
+    (while (and entries (not old-entry))
+      (when (or (eq entry (car entries))
+                (and (ep-ep-alist-get-value "=key=" entry)
+                     (equal (ep-ep-alist-get-value "=key=" entry) 
+                            (ep-ep-alist-get-value "=key=" (car entries))))
+                (and (ep-ep-alist-get-value "eprint" entry) 
+                     (equal (ep-ep-alist-get-value "eprint" entry) 
+                            (ep-ep-alist-get-value "eprint" (car entries)))))
+        (setq old-entry entry))
+
+      (pop entries))
+    (cond 
+     (old-entry
+      nil)
+     (t
+      (goto-char (point-max))
+      (toggle-read-only -1)
+      (ep-ep-format-entry entry)
+      (toggle-read-only 1)
+      t))))
+
 (defun ep-import-entry (&optional entry buffer)
   "Import ENTRY to BUFFER. Default to the current entry and the main Emacs Paper buffer."
   (interactive)
@@ -1008,29 +1053,11 @@ MARK is 'unmark, unmark ENTRY."
      ((not buffer) (error "Main buffer is not loaded"))
      (t
       (set-buffer buffer)
-      (let ((entries (ep-ep-extract-entries))
-            old-entry)
-        (while (and entries (not old-entry))
-	  (when (or (eq entry (car entries))
-                    (and (ep-ep-alist-get-value "=key=" entry)
-			 (equal (ep-ep-alist-get-value "=key=" entry) 
-				(ep-ep-alist-get-value "=key=" (car entries))))
-                    (and (ep-ep-alist-get-value "eprint" entry) 
-			 (equal (ep-ep-alist-get-value "eprint" entry) 
-				(ep-ep-alist-get-value "eprint" (car entries)))))
-            (setq old-entry entry))
-
-          (pop entries))
-        (cond 
-         (old-entry
-          (message "Entry already exists in '%s'" (buffer-name buffer))
-          nil)
-         (t
-          (goto-char (point-max))
-          (toggle-read-only -1)
-          (ep-ep-format-entry entry)
-          (toggle-read-only 1)
-          (message "Entry saved to '%s'" (buffer-name buffer)))))))))
+      (ep-ep-register-undo-insert-entry entry)
+      (if (ep-ep-insert-entry entry buffer)
+          (message "Entry saved to '%s'" (buffer-name buffer))
+        (pop ep-ep-undo-list)
+        (message "Entry already exists in '%s'" (buffer-name buffer)))))))
 
 (defun ep-new-entry ()
   "Create a new entry in the current buffer and edit it."
@@ -1062,24 +1089,34 @@ MARK is 'unmark, unmark ENTRY."
 (defun ep-kill-entry ()
   "Kill the current entry."
   (interactive)
-  (when (and ep-ep-current-entry (y-or-n-p "Delete current entry? "))
+  (when ep-ep-current-entry)
+    (ep-ep-register-undo-delete-entry ep-ep-current-entry)
     (ep-copy-entry)
-    (let* ((boundaries (ep-ep-entry-boundaries ep-ep-current-entry))
-           (entry-start (car boundaries))
-           (entry-end (min (cdr boundaries) (point-max))))
-      (toggle-read-only -1)
-      (delete-region entry-start entry-end)
-      (toggle-read-only 1))))
+    (ep-ep-delete-entry ep-ep-current-entry))
+
+(defun ep-ep-delete-entry (entry)
+  "Delete 'entry'."
+  (let* ((boundaries (ep-ep-entry-boundaries entry))
+         (entry-start (- (car boundaries) 1))
+         (entry-end (cdr boundaries)))
+    (toggle-read-only -1)
+    (delete-region entry-start entry-end)
+    (toggle-read-only 1)))
          
 (defun ep-import-marked-entries ()
   "Import all marked entries to the main Emaca Paper buffer."
   (interactive)
   (let ((marked-entries (ep-ep-extract-marked-entries))
+        (buffer ep-main-buffer)
         (saved 0))
-    (dolist (entry marked-entries)
-      (when (ep-import-entry entry)
-        (incf saved)))
-    (message "Saved %d entries" saved)))
+    (if (not buffer)
+        (error "Main Emacs paper buffer not loaded!")
+      (set-buffer buffer)
+      (dolist (entry marked-entries)
+        (when (ep-ep-insert-entry entry buffer)
+          (ep-ep-register-undo-insert-entry entry)
+          (incf saved)))
+      (message "Saved %d entries" saved))))
 
 ;;; Find entry online
 
@@ -1259,6 +1296,7 @@ arXiv."
     (cond 
      ((not eprint) (message "%s" "The current entry has no preprint number"))
      (t
+      (ep-ep-register-undo-edit-entry entry)
       (dolist (field arxiv-entry)
         (if (not overwrite)
             (ep-ep-alist-insert (car field) entry (cdr field))
@@ -1408,6 +1446,7 @@ entries are extracted."
 (defun ep-fix-title ()
   "Fix the title of the current entry"
   (interactive)
+  (ep-ep-register-undo-edit-entry ep-ep-current-entry)
   (ep-ep-fix-title ep-ep-current-entry)
   (ep-ep-update-entry ep-ep-current-entry))
 
@@ -1498,6 +1537,7 @@ non-nil, replace any exisitng fields."
      ((not spires-entry) (message "%s" "The current entry was not found on Spires"))
      (t
       (ep-ep-fix-title spires-entry)
+      (ep-ep-register-undo-edit-entry entry)
       (dolist (field spires-entry)
         (if (not overwrite)
             (ep-ep-alist-insert (car field) entry (cdr field))
@@ -1639,3 +1679,95 @@ non-nil, replace any exisitng fields."
             (message "Entry %s does not have any associated PDF." key)
           (message "Running %s" cmd)
           (shell-command cmd))))))
+
+
+;; Undo functionality
+
+(defvar ep-ep-undo-list '() "Undo list")
+(defvar ep-ep-redo-list '() "Redo list")
+
+(defun ep-ep-register-undo (lst)
+  (unless (eq last-command 'ep-undo)
+    (setq ep-ep-undo-list (append ep-ep-redo-list ep-ep-undo-list))
+    (setq ep-ep-redo-list nil))
+  (push (cons "Undo!" lst) ep-ep-undo-list))
+
+(defun ep-ep-register-redo (lst)
+  (push (cons "Redo!" lst) ep-ep-redo-list))
+
+(defun ep-ep-register-undo-edit-entry (entry)
+  (ep-ep-register-undo (list 'apply 'ep-ep-undo-edit-entry entry (copy-alist entry))))
+
+(defun ep-ep-register-redo-edit-entry (entry)
+  (ep-ep-register-redo (list 'apply 'ep-ep-undo-edit-entry entry (copy-alist entry))))
+
+(defun ep-ep-undo-edit-entry (args)
+  (let ((entry (car args))
+        (old-entry (cadr args)))
+    (ep-ep-register-redo-edit-entry entry)
+    (dolist (field old-entry)
+      (ep-ep-alist-set (car field) entry (cdr field)))
+    (ep-ep-update-entry entry)
+    (ep-ep-goto-entry entry)))
+
+(defun ep-ep-register-undo-insert-entry (entry)
+  (ep-ep-register-undo (list 'apply 'ep-ep-undo-insert-entry entry)))
+
+(defun ep-ep-register-redo-insert-entry (entry)
+  (ep-ep-register-redo (list 'apply 'ep-ep-undo-insert-entry entry)))
+
+(defun ep-ep-undo-insert-entry (args)
+  (let ((entry (car args)))
+    (ep-ep-goto-entry entry)
+    (ep-ep-register-redo-delete-entry entry)
+    (ep-ep-delete-entry entry)))
+
+(defun ep-ep-register-undo-delete-entry (entry)
+  (ep-ep-register-undo (list 'apply 'ep-ep-undo-delete-entry entry)))
+
+(defun ep-ep-register-redo-delete-entry (entry)
+  (ep-ep-register-redo (list 'apply 'ep-ep-undo-delete-entry entry)))
+
+(defun ep-ep-undo-delete-entry (args)
+  (let ((entry (car args)))
+    (ep-ep-register-redo-insert-entry entry)
+    (ep-ep-insert-entry entry (current-buffer))
+    (ep-ep-goto-entry entry)))
+
+(defun ep-undo ()
+  "Undo"
+  (interactive)
+
+  (unless (eq last-command 'ep-undo)
+    (setq ep-ep-undo-list (append ep-ep-redo-list ep-ep-undo-list))
+    (setq ep-ep-redo-list nil))
+
+  (if (not ep-ep-undo-list)
+      (message "No further undo information")
+    (let* ((undo-item (pop ep-ep-undo-list))
+           (type (car undo-item))
+           (head (cadr undo-item)))
+      (case head
+        (apply
+         (let ((func (caddr undo-item))
+               (args (cdddr undo-item)))
+           (funcall func args))))
+      (message "%s" type))))
+
+(defun ep-redo ()
+  "Redo"
+  (interactive)
+
+
+  (if (not ep-ep-redo-list)
+      (message "No further undo information")
+    (let* ((undo-item (pop ep-ep-redo-list))
+           (type (car undo-item))
+           (head (cadr undo-item)))
+      (case head
+        (apply
+         (let ((func (caddr undo-item))
+               (args (cdddr undo-item)))
+           (funcall func args))))
+      (message "%s" type))))
+
