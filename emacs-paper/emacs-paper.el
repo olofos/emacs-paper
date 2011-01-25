@@ -71,7 +71,7 @@ filename."
 (defvar ep-bib-fields
   '("author" "title" "journal" "volume" "number" "publisher" "year" "month" 
     "edition" "address" "pages" "eprint" "archivePrefix" "primaryClass"
-    "doi" "printed" "SLACcitation" "note" "ep-tags")
+    "doi" "school" "series" "SLACcitation" "note" "ep-tags")
   "BibTeX fields saved by Emacs Paper. The fields are inserted in
   the order of appearance in the list.")
 
@@ -573,6 +573,15 @@ point. With a non-nil argument, skip N entries backwards."
                  (center-line (/ (window-height) 2)))
             (recenter (max 0 (- center-line (/ (- end-line start-line) 2))))))))))
 
+(defun ep-scroll-up ()
+  (interactive)
+  (scroll-up))
+
+(defun ep-scroll-down ()
+  (interactive)
+  (scroll-down))
+
+
 (defun ep-ep-section-entries-boundaries ()
   "Return the boundaries of the current section as a cons-pair (start . end)."
   (let* ((next (next-single-property-change (point) :ep-heading))
@@ -751,6 +760,8 @@ as (START . END)."
 
 (define-key ep-ep-mode-map "n" 'ep-next-entry-recenter)
 (define-key ep-ep-mode-map "p" 'ep-previous-entry-recenter)
+(define-key ep-ep-mode-map " " 'ep-scroll-up)
+(define-key ep-ep-mode-map "\M-p" 'ep-scroll-down)
 
 (define-key ep-ep-mode-map "m" 'ep-mark-entry)
 (define-key ep-ep-mode-map "i" 'ep-import-entry)
@@ -1640,7 +1651,7 @@ non-nil, replace any exisitng fields."
                  (pdfname (concat eprint ".pdf"))
                  (filename (concat ep-pdf-dir pdfname)))
             (if (not (and ep-pdf-file ep-pdf-dir (equal (current-buffer) ep-main-buffer)))
-                (browse-url url)
+                  (browse-url (concat url ".pdf"))
               (if (not (ep-ep-url-retrieve-file url filename))
                   (message "Failed to retrieve file from %s." url)
                 (ep-ep-open-pdf filename)
@@ -1686,14 +1697,25 @@ non-nil, replace any exisitng fields."
 (defvar ep-ep-undo-list '() "Undo list")
 (defvar ep-ep-redo-list '() "Redo list")
 
+
+(defun ep-ep-undo-boundary ()
+  (push nil ep-ep-undo-list)
+  (push '(undo) ep-ep-undo-list))
+
+(defun ep-ep-redo-boundary ()
+  (push nil ep-ep-redo-list)
+  (push '(redo) ep-ep-redo-list))
+
 (defun ep-ep-register-undo (lst)
   (unless (eq last-command 'ep-undo)
     (setq ep-ep-undo-list (append ep-ep-redo-list ep-ep-undo-list))
     (setq ep-ep-redo-list nil))
-  (push (cons "Undo!" lst) ep-ep-undo-list))
+  (ep-ep-undo-boundary)
+  (push lst ep-ep-undo-list))
 
 (defun ep-ep-register-redo (lst)
-  (push (cons "Redo!" lst) ep-ep-redo-list))
+  (ep-ep-redo-boundary)
+  (push lst ep-ep-redo-list))
 
 (defun ep-ep-register-undo-edit-entry (entry)
   (ep-ep-register-undo (list 'apply 'ep-ep-undo-edit-entry entry (copy-alist entry))))
@@ -1744,30 +1766,15 @@ non-nil, replace any exisitng fields."
 
   (if (not ep-ep-undo-list)
       (message "No further undo information")
-    (let* ((undo-item (pop ep-ep-undo-list))
-           (type (car undo-item))
-           (head (cadr undo-item)))
-      (case head
-        (apply
-         (let ((func (caddr undo-item))
-               (args (cdddr undo-item)))
-           (funcall func args))))
-      (message "%s" type))))
-
-(defun ep-redo ()
-  "Redo"
-  (interactive)
-
-
-  (if (not ep-ep-redo-list)
-      (message "No further undo information")
-    (let* ((undo-item (pop ep-ep-redo-list))
-           (type (car undo-item))
-           (head (cadr undo-item)))
-      (case head
-        (apply
-         (let ((func (caddr undo-item))
-               (args (cdddr undo-item)))
-           (funcall func args))))
-      (message "%s" type))))
-
+    (let (undo-item)
+      (while (setq undo-item (pop ep-ep-undo-list))
+        (let ((head (car undo-item)))
+          (case head
+            (apply
+             (let ((func (cadr undo-item))
+                   (args (cddr undo-item)))
+               (funcall func args)))
+            (undo
+             (message "Undo!"))
+            (redo
+             (message "Redo!"))))))))
