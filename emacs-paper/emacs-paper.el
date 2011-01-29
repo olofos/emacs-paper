@@ -43,6 +43,11 @@
   "Base URL used for Spires queries."
   :type 'string)
 
+(defcustom ep-inspire-url 
+  "http://inspirebeta.net/search?p="
+  "Base URL used for Inspire queries."
+  :type 'string)
+
 (defcustom ep-arxiv-url "http://arxiv.org"
   "Base URL for visiting the arXiv."
   :type 'string)
@@ -1134,7 +1139,7 @@ MARK is 'unmark, unmark ENTRY."
 (defun ep-goto (&optional arg)
   "Find this entry online. Query the user about how to look for the entry."
   (interactive "P")
-  (let* ((collection '(("arXiv abstract" . 1) ("DOI" . 2) ("Spires record" . 3) ("PDF" . 4)))
+  (let* ((collection '(("arXiv abstract" . 1) ("DOI" . 2) ("Spires record" . 3) ("PDF" . 4) ("Inspire record" . 5)))
          (completion-ignore-case t)
          (answer (completing-read "Go to: " collection nil t)))
     (case (cdr (assoc answer collection))
@@ -1142,6 +1147,7 @@ MARK is 'unmark, unmark ENTRY."
       (2 (ep-goto-doi arg))
       (3 (ep-goto-spires arg))
       (4 (ep-goto-pdf arg))
+      (5 (ep-goto-inspire arg))
       (otherwise (error "Cannot go to '%s'" answer)))))
 
 (defun ep-goto-arxiv-abstract (&optional arg)
@@ -1165,6 +1171,22 @@ MARK is 'unmark, unmark ENTRY."
         (browse-url url)
       (message "There is no preprint number for this entry. Trying using DOI.")
       (ep-goto-doi))))
+
+(defun ep-goto-inspire (&optional arg)
+  "Go to the Inspire record of the current entry."
+  (interactive "P")
+  (let* ((entry ep-ep-current-entry)
+         (query nil))
+    (cond 
+     ((ep-ep-alist-get-value "=key=" entry)
+      (setq query (concat "find+texkey+" (ep-ep-alist-get-value "=key=" entry))))
+     ((ep-ep-alist-get-value "eprint" entry)
+      (setq query (concat "find+eprint+" (ep-ep-alist-get-value "eprint" entry)))))
+    (if query
+        (browse-url (concat ep-inspire-url query))
+      (message "There is no preprint number for this entry. Trying using DOI.")
+      (ep-goto-doi))))
+
  
 (defun ep-goto-doi (&optional arg)
   "Follow the DOI of the current entry."
