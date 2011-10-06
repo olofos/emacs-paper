@@ -1323,7 +1323,8 @@ to new, cross listed and updated articles."
 arXiv."
   (interactive "i\nP")
   (let* ((entry (or entry ep-ep-current-entry))
-         (eprint (ep-ep-alist-get-value "eprint" entry)))
+         (eprint (ep-ep-alist-get-value "eprint" entry))
+         (modified nil))
     (message (concat "Looking up " eprint " on the arXiv"))
     (let ((arxiv-entry (when eprint (car (ep-ep-arxiv-id-query (list eprint))))))
     (cond 
@@ -1331,10 +1332,21 @@ arXiv."
      (t
       (ep-ep-register-undo-edit-entry entry)
       (dolist (field arxiv-entry)
-        (if (not overwrite)
-            (ep-ep-alist-insert (car field) entry (cdr field))
-          (ep-ep-alist-set (car field) entry (cdr field))))
-      (ep-ep-update-entry entry)
+        (let ((field-name (car field))
+              (field-val (cdr field)))
+          (when (and (member field-name ep-bib-fields)
+                     (or (and (not overwrite) 
+                              (not (ep-ep-alist-get-value field-name entry)))
+                         (and overwrite
+                              (not (string-equal field-val (ep-ep-alist-get-value field-name entry))))))
+            (setq modified t))
+          (if (not overwrite)
+              (ep-ep-alist-insert field-name entry field-val)
+            (ep-ep-alist-set field-name entry field-val))))
+      (with-silent-modifications
+        (ep-ep-update-entry entry))
+      (when modified
+        (set-buffer-modified-p t))
       (message "Entry updated"))))))
 
 (defun ep-check-arxiv (category) 
@@ -1564,7 +1576,8 @@ non-nil, replace any exisitng fields."
          (query (or(ep-ep-alist-get-value "=key=" entry)
                    (ep-ep-alist-get-value "eprint" entry)))
          (spires-entry (when query 
-                         (car (ep-ep-spires-query-entries (ep-ep-spires-guess-query query))))))
+                         (car (ep-ep-spires-query-entries (ep-ep-spires-guess-query query)))))
+         (modified nil))
     (cond 
      ((not query) (message "%s" "The current entry has no key and no preprint number"))
      ((not spires-entry) (message "%s" "The current entry was not found on Spires"))
@@ -1572,10 +1585,21 @@ non-nil, replace any exisitng fields."
       (ep-ep-fix-title spires-entry)
       (ep-ep-register-undo-edit-entry entry)
       (dolist (field spires-entry)
-        (if (not overwrite)
-            (ep-ep-alist-insert (car field) entry (cdr field))
-          (ep-ep-alist-set (car field) entry (cdr field))))
-      (ep-ep-update-entry entry)
+        (let ((field-name (car field))
+              (field-val (cdr field)))
+          (when (and (member field-name ep-bib-fields)
+                     (or (and (not overwrite) 
+                              (not (ep-ep-alist-get-value field-name entry)))
+                         (and overwrite
+                              (not (string-equal field-val (ep-ep-alist-get-value field-name entry))))))
+            (setq modified t))
+          (if (not overwrite)
+              (ep-ep-alist-insert field-name entry field-val)
+            (ep-ep-alist-set field-name entry field-val))))
+      (with-silent-modifications
+        (ep-ep-update-entry entry))
+      (when modified
+        (set-buffer-modified-p t))
       (message "Entry updated")))))
 
 ;;  Main buffer
@@ -1689,11 +1713,12 @@ non-nil, replace any exisitng fields."
          (pdfname (file-relative-name filename ep-pdf-dir)))
     (if (not key)
         (message "Cannot save a PDF for a paper without key.")
-      (ep-ep-alist-set key ep-pdf-list pdfname)
-      (ep-ep-pdf-write-file ep-pdf-file)
-      (when ep-add-pdf-to-itunes-automatically
-        (ep-add-pdf-to-itunes))
-      (ep-ep-update-entry entry))))
+      (with-silent-modifications
+        (ep-ep-alist-set key ep-pdf-list pdfname)
+        (ep-ep-pdf-write-file ep-pdf-file)
+        (when ep-add-pdf-to-itunes-automatically
+          (ep-add-pdf-to-itunes))
+        (ep-ep-update-entry entry)))))
 
 (defun ep-add-pdf-to-itunes ()
   (interactive)
