@@ -44,16 +44,12 @@
   "Default arXiv category to use when checking for new articles."
   :type 'string)
 
-(defcustom ep-highlight-color 
-  "honeydew1"
-  ;"gray15"
+(defcustom ep-highlight-color "honeydew1"
   "Background color of highlighted entry."
   :type 'color)
 
 (defcustom ep-spires-url 
-  "http://www-spires.dur.ac.uk/cgi-bin/spiface/hep/www?rawcmd="
-;;  "http://www-library.desy.de/cgi-bin/spiface/find/hep/www?rawcmd="
-;;  "http://www.slac.stanford.edu/spires/find/hep/www?rawcmd="
+  "http://www.slac.stanford.edu/spires/find/hep/www?rawcmd="
   "Base URL used for Spires queries."
   :type 'string)
 
