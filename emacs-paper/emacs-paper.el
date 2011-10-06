@@ -25,6 +25,9 @@
   "Directory for storing PDF-files."
   :type '(restricted-sexp :match-alternatives (stringp 'nil)))
 
+(defcustom ep-temp-dir "/tmp/"
+  "Directory for storing temporary files.")
+
 (defcustom ep-pdf-file nil
   "File for storing the list of PDF-files."
   :type '(restricted-sexp :match-alternatives (stringp 'nil)))
@@ -173,6 +176,12 @@ WARNING: evaluates the parameters more than once! Fix this!"
 	(while (re-search-forward regexp nil t) 
 	  (replace-match string t nil))))
 
+(defun ep-ep-string-match-full (regexp string)
+  "Check if 'string' exactly matches 'regexp'"
+  (and (string-match regexp string)
+	   (equal (match-beginning 0) 0)
+	   (equal (match-end 0) (length string))))
+
 ;;; Entry helper functions
 
 (defun ep-ep-field-value (field-name entry)
@@ -222,8 +231,8 @@ buffer."
           no-key)
       (while (and entries (not no-key))
         (unless (or (ep-ep-field-value "=key=" (car entries)) 
-                    (string= (ep-ep-field-value "=type=" (car entries)) "Preamble")
-                    (string= (ep-ep-field-value "=type=" (car entries)) "String"))
+                    (string-equal (ep-ep-field-value "=type=" (car entries)) "Preamble")
+                    (string-equal (ep-ep-field-value "=type=" (car entries)) "String"))
           (setq no-key (car entries)))
         (pop entries))
       (when no-key
@@ -409,10 +418,10 @@ nil. Return t if anything was inserted, otherwise nil."
   (insert "\n")
   (let* ((start (point)))
     (cond 
-     ((string= (ep-ep-field-value "=type=" entry) "Preamble")
+     ((string-equal (ep-ep-field-value "=type=" entry) "Preamble")
       (ep-ep-insert-non-nil (ep-ep-propertize-non-nil (ep-ep-field-value "=content=" entry)
                                                       'face '(:slant italic :height 0.8)) "\n"))
-     ((string= (ep-ep-field-value "=type=" entry) "String")
+     ((string-equal (ep-ep-field-value "=type=" entry) "String")
       (ep-ep-insert-non-nil (ep-ep-propertize-non-nil (ep-ep-field-value "=content=" entry)
                                                       'face '(:slant italic))))
      (t
@@ -480,11 +489,11 @@ nil. Return t if anything was inserted, otherwise nil."
     (dolist (entry entries)
       (let ((entry-type (ep-ep-alist-get-value "=type=" entry)))
         (cond 
-         ((string= entry-type "Preamble")
+         ((string-equal entry-type "Preamble")
           (when (not seen-preamble)
             (setq seen-preamble t)
             (insert "\n" (propertize "Preamble" 'face '(:weight bold :height 1.1 :underline t)) "\n")))
-         ((string= entry-type "String")
+         ((string-equal entry-type "String")
           (when (not seen-string) 
             (setq seen-string t)
             (insert "\n" (propertize "Strings" 'face '(:weight bold :height 1.1 :underline t)) "\n")))
@@ -621,10 +630,10 @@ point. With a non-nil argument, skip N entries backwards."
     (lambda (entries)
       (sort entries (lambda (entry-a entry-b)
                       (cond 
-                       ((string= (ep-ep-alist-get-value "=type=" entry-b) "Preamble") nil)
-                       ((string= (ep-ep-alist-get-value "=type=" entry-a) "Preamble") t)
-                       ((string= (ep-ep-alist-get-value "=type=" entry-b) "String") nil)
-                       ((string= (ep-ep-alist-get-value "=type=" entry-a) "String") t)
+                       ((string-equal (ep-ep-alist-get-value "=type=" entry-b) "Preamble") nil)
+                       ((string-equal (ep-ep-alist-get-value "=type=" entry-a) "Preamble") t)
+                       ((string-equal (ep-ep-alist-get-value "=type=" entry-b) "String") nil)
+                       ((string-equal (ep-ep-alist-get-value "=type=" entry-a) "String") t)
                        (t
                         (string-lessp (ep-ep-alist-get-value key entry-a)
                                       (ep-ep-alist-get-value key entry-b)))))))))
@@ -794,7 +803,7 @@ as (START . END)."
 
 (define-key ep-ep-mode-map "o" 'ep-sort-entries)
 
-(define-key ep-ep-mode-map "u" 'ep-spires-update-entry)
+(define-key ep-ep-mode-map "u" 'ep-inspire-update-entry)
 (define-key ep-ep-mode-map "a" 'ep-arxiv-update-entry)
 (define-key ep-ep-mode-map "f" 'ep-search)
 (define-key ep-ep-mode-map "r" 'ep-regexp)
@@ -1167,8 +1176,8 @@ MARK is 'unmark, unmark ENTRY."
          (url (ep-ep-concat-non-nil ep-arxiv-url "/abs/" (ep-ep-alist-get-value "eprint" entry))))
     (if url
         (browse-url url)
-      (message "There is no preprint number for this entry. Trying at Spires.")
-      (ep-goto-spires))))
+      (message "There is no preprint number for this entry. Trying at Inpire Beta.")
+      (ep-goto-inspire))))
 
 (defun ep-goto-spires (&optional arg)
   "Go to the Spires record of the current entry."
@@ -1265,7 +1274,7 @@ a list of strings. Returns a list of entries."
              (url (concat ep-arxiv-api-url "?id_list="
                           id-string "&start=0&max_results=" 
                           (number-to-string (length id-list))))
-             (res-buf (url-retrieve-synchronously url))
+             (res-buf (ep-ep-url-retrieve-synchronously url))
              (xml-file (make-temp-file "ep-arxiv-" nil ".xml"))
              xml-file-buf
              entries)
@@ -1282,7 +1291,7 @@ a list of strings. Returns a list of entries."
 
         (setq xml-file-buf (find-file xml-file))
         ;; Don't clutter the file name history
-        (when (string= (car file-name-history) xml-file)
+        (when (string-equal (car file-name-history) xml-file)
             (setq file-name-history (cdr file-name-history)))
         (setq entries (ep-ep-arxiv-parse-atom-buffer xml-file-buf))
 
@@ -1295,7 +1304,7 @@ a list of strings. Returns a list of entries."
   "Retrive new entries from the arXiv for CATEGORY. Returns a
 tripplet with three lists of article identifiers, corresponding
 to new, cross listed and updated articles."
-  (let* ((res-buf (url-retrieve-synchronously (concat ep-arxiv-rss-url category)))
+  (let* ((res-buf (ep-ep-url-retrieve-synchronously (concat ep-arxiv-rss-url category)))
          (title-list (save-excursion
                        (set-buffer res-buf)
                        (let* ((root (xml-parse-region (point-min) (point-max)))
@@ -1395,70 +1404,171 @@ arXiv."
                  (length entries-cross-listed)
                  (length entries-updated))))))
 
-;;; Connect to Spires
+;;; Inspire Beta support
 
-(defun ep-ep-spires-guess-query (key)
-  "Guess the Spires query to find KEY."
+(defun ep-ep-inspire-guess-query (key)
+  "Guess the Inspire Beta query to find KEY."
   (concat
 
    (cond ((string-match "FIND " key)
           (replace-regexp-in-string " " "+" key))
          ((string-match " " key)
           (concat "FIND+" (replace-regexp-in-string " " "+" key)))
-         ((oos-string-match-full "[0-9]\\{4\\}\\.[0-9]\\{4\\}" key) 
+         ((ep-ep-string-match-full "[0-9]\\{4\\}\\.[0-9]\\{4\\}" key) 
           (concat "FIND+EPRINT+" key))        ; Match new arxiv identifier
-         ((oos-string-match-full "[0-9]\\{7\\}" key) 
+         ((ep-ep-string-match-full "[0-9]\\{7\\}" key) 
           (concat "FIND+EPRINT+hep-th/" key)) ; Match old arxiv identifier
                                               ; (default to hep-th)
-         ((oos-string-match-full "[a-z\\-]+/[0-9]\\{7\\}" key) 
+         ((ep-ep-string-match-full "[a-z\\-]+/[0-9]\\{7\\}" key) 
           (concat "FIND+EPRINT+" key))        ; Match old arxiv identifier
-         ((oos-string-match-full "[A-Za-z']*:[0-9]\\{4\\}[a-z]\\{2\\}[a-z]?" key) 
+         ((ep-ep-string-match-full "[A-Za-z']*:[0-9]\\{4\\}[a-z]\\{2\\}[a-z]?" key) 
           (concat "FIND+TEXKEY+" key))        ; Match SPIRES key
          (t
           (concat "FIND+A+" key)))))          ; Default to author search
 
-(defun ep-ep-spires-url (query &optional format)
-  "Construct an url for a Spires QUERY."
-  (let ((format (or format "wwwbriefbibtex")))
-    (concat ep-spires-url
-            query
-            "&FORMAT=" format "&SEQUENCE=")))
-
-(defun ep-ep-spires-extract-entries (query-buf)
-  "Extract entries from a buffer resulting from a Spires query in
-QUERY-BUF. Return a list of entries. Kill QUERY-BUF after the
+(defun ep-ep-inspire-extract-entries (query-buf)
+  "Extract entries from a buffer resulting from a Inspires query
+in QUERY-BUF. Return a list of entries. Kill QUERY-BUF after the
 entries are extracted."
   (save-current-buffer
-    (let* (entries)
-
+    (let (entries)
       (switch-to-buffer query-buf)
       
-      (goto-char (point-min))
-      (let* ((start (progn (search-forward "<!-- START RESULTS -->\n" nil 't) (point)))
-             (end (progn (search-forward "<!-- END RESULTS -->" nil 't) (- (point) 21))))
+      (let* ((start (progn (goto-char (point-min))
+                           (search-forward "<pre>" nil 't) 
+                           (point)))
+             (end (progn (goto-char (point-max))
+                         (search-backward "</pre>" nil 't) 
+                         (point))))
         (when (< start end)
           (narrow-to-region start end)
+          (ep-ep-replace-regexp "<pre>" "")
+          (ep-ep-replace-regexp "</pre>" "")
           (setq entries (ep-bib-parse-buffer query-buf))))
       (kill-buffer query-buf)
-
-      (dolist (entry entries)
-        (ep-ep-fix-title entry))
-
       entries)))
+
+(defun ep-ep-inspire-query-entries (query)
+  "Perform a Inpire Beta QUERY. Return a list of entries."
+  (save-current-buffer
+    (message (concat "Querying Inspire for '" query "'"))
+    (let ((query-buf (ep-ep-url-retrieve-synchronously (ep-ep-inspire-url query))))
+      (when query-buf
+        (ep-ep-inspire-extract-entries query-buf)))))
+
+(defun ep-ep-inspire-url (query &optional format)
+  "Construct an url for a Inspire Beta QUERY."
+  (let ((format (or format "hx")))
+    (concat ep-inspire-url
+            query
+            "&of=" format)))
+
+(defun ep-inspire-update-entry (&optional entry overwrite)
+  "Update ENTRY by getting any missing fields from Inspire. If
+ENTRY is nil, default to the current entry. If OVERWRITE is
+non-nil, replace any exisitng fields."
+  (interactive "i\nP")
+  (let* ((entry (or entry ep-ep-current-entry))
+         (query (or (ep-ep-alist-get-value "=key=" entry)
+                    (ep-ep-alist-get-value "eprint" entry)))
+         (inspire-entry (when query 
+                         (car (ep-ep-inspire-query-entries (ep-ep-inspire-guess-query query)))))
+         (modified nil))
+    (cond 
+     ((not query) (message "%s" "The current entry has no key and no preprint number"))
+     ((not inspire-entry) (message "%s" "The current entry was not found on Inspire"))
+     (t
+      (ep-ep-fix-title inspire-entry)
+      (ep-ep-fix-note inspire-entry)
+      (ep-ep-register-undo-edit-entry entry)
+      (dolist (field inspire-entry)
+        (let ((field-name (car field))
+              (field-val (cdr field)))
+          (when (and (member field-name ep-bib-fields)
+                     (or (and (not overwrite) 
+                              (not (ep-ep-alist-get-value field-name entry)))
+                         (and overwrite
+                              (not (string-equal field-val (ep-ep-alist-get-value field-name entry))))))
+            (setq modified t))
+          (if (not overwrite)
+              (ep-ep-alist-insert field-name entry field-val)
+            (ep-ep-alist-set field-name entry field-val))))
+      (with-silent-modifications
+        (ep-ep-update-entry entry))
+      (when modified
+        (set-buffer-modified-p t))
+      (message "Entry updated")))))
+
+
+;; Searching locally and in Inpire Beta
+
+(defun ep-search (query)
+  "Search for QUERY in the main Emacs Paper buffer and in Inspire Beta."
+  (interactive "sSearch query: ")
+  (let* ((inspire-query (ep-ep-inspire-guess-query query))
+         (url (ep-ep-inspire-url inspire-query)))
+    (ep-ep-new-buffer (concat "EP search results: " query)
+       (ep-ep-insert-main-heading (concat "Search results for '" query "'"))
+       (ep-ep-insert-sub-heading "Local results")
+       (let* ((ep-query (ep-ep-search-parse-query inspire-query))
+              (entries (ep-ep-filter-entries (ep-ep-extract-entries ep-main-buffer) ep-query)))
+         (ep-ep-format-entries entries))
+       (ep-ep-insert-sub-heading "Inpire Beta results"))
+    (message (concat "Looking up '" inspire-query "' at Inpire Beta"))
+    (url-retrieve url 'ep-ep-inspire-query-callback (list (current-buffer)))))
+
+(defun ep-ep-search-parse-query (query)
+  "Parse the Inpire Beta formatted QUERY and returns a list of
+cons-cells (BibTeX-field . regexp)."
+  (let ((case-fold-search t)
+        result)
+    (setq query (replace-regexp-in-string "\\+" " " query))
+    (setq query (replace-regexp-in-string "^FIND? " "" query))
+
+    (dolist (elem (split-string query "\\( and \\| AND \\)"))
+      (cond
+       ((string-match "^a " elem)
+        (push (cons "author" (substring elem 2)) result))
+       ((string-match "^d " elem)
+        (push (cons "year" (substring elem 2)) result))
+       ((string-match "^t " elem)
+        (push (cons "title" (substring elem 2)) result))
+       ((string-match "^eprint " elem)
+        (push (cons "eprint" (substring elem 7)) result))
+       ((string-match "^texkey " elem)
+        (push (cons "=key=" (substring elem 7)) result))))
+    result))
+
+(defun ep-ep-inspire-query-callback (status buf)
+  "Insert entries returned by a Inpire Beta query. Called by `url-retrieve' in `ep-search'."
+  (let ((entries (ep-ep-inspire-extract-entries (current-buffer)))
+        point)
+    (message "Inserting matches from Inpire")
+    (when (buffer-live-p buf)
+      (switch-to-buffer buf)
+      (setq point (point))
+      (toggle-read-only -1)
+      (goto-char (point-max))
+      (ep-ep-format-entries entries)
+      (toggle-read-only 1)
+      (goto-char point))))
+
+;;; Fix up titles and notes
 
 (defun ep-ep-fix-title (entry)
   (when ep-fix-titles
     (with-temp-buffer
       (insert (ep-ep-alist-get-value "title" entry))
     
-      (let ((replacements
-             '(("\n" . " ")       ; Remove any newlines
-               (" +" . " ")       ; Only single spaces
+      (let* ((pre-replacements
+             '(("\n" . " ")  ; Remove any newlines
+               (" +" . " ")  ; Only single spaces
   
-               ("^{" . "")                ; Remove start brace
-               ("}$" . "")                ; Remove end brace
-  
-               ("AdS(5) *x *S(5)" . "{$\\\\AdS_5 \\\\times \\\\Sphere^5$}")
+               ("^{" . "")   ; Remove start brace
+               ("}$" . ""))) ; Remove end brace
+
+            (replacements
+             '(("AdS(5) *x *S(5)" . "{$\\\\AdS_5 \\\\times \\\\Sphere^5$}")
                ("AdS(5) *x *S\\*\\*5" . "{$\\\\AdS_5 \\\\times \\\\Sphere^5$}")
                ("AdS_?5 *x *S^?5" . "{$\\\\AdS_5 \\\\times \\\\Sphere^5$}")
                ("AdS_?4 *[x\*] *CP[_^]?3" . "{$\\\\AdS_4 \\\\times \\\\CP^3$}")
@@ -1490,8 +1600,10 @@ entries are extracted."
                (" \\([A-Z0-9]+\\) " . " {\\1} ")
                (" \\([A-Z0-9]+\\)$" . " {\\1}")
 
-               ("{A} " . "A ")
-             )))
+               ("{A} " . "A "))))
+
+        (dolist (repl pre-replacements)
+          (ep-ep-replace-regexp (car repl) (cdr repl)))
 
         (dolist (repl replacements)
           (ep-ep-replace-regexp (car repl) (cdr repl))))
@@ -1505,112 +1617,11 @@ entries are extracted."
   (ep-ep-fix-title ep-ep-current-entry)
   (ep-ep-update-entry ep-ep-current-entry))
 
-(defun ep-ep-spires-query-entries (query)
-  "Perform a Spires QUERY. Return a list of entries."
-  (save-current-buffer
-    (message (concat "Querying Spires for '" query "'"))
-    (let* ((url (ep-ep-spires-url query))
-           (query-buf (url-retrieve-synchronously url))
-           entries)
-
-      (switch-to-buffer query-buf)
-      
-      (goto-char (point-min))
-      (let* ((start (progn (search-forward "<!-- START RESULTS -->\n" nil 't) (point)))
-             (end (progn (search-forward "<!-- END RESULTS -->" nil 't) (- (point) 21))))
-        (when (< start end)
-          (narrow-to-region start end)
-          (setq entries (ep-bib-parse-buffer query-buf))))
-      (kill-buffer query-buf)
-      entries)))
-
-;; Searching locally and in Spires
-
-(defun ep-ep-spires-query-callback (status buf)
-  "Insert entries returned by a Spires query. Called by `url-retrieve' in `ep-search'."
-  (let ((entries (ep-ep-spires-extract-entries (current-buffer)))
-        point)
-    (message "Inserting matches from Spires")
-    (when (buffer-live-p buf)
-      (switch-to-buffer buf)
-      (setq point (point))
-      (toggle-read-only -1)
-      (goto-char (point-max))
-      (ep-ep-format-entries entries)
-      (toggle-read-only 1)
-      (goto-char point))))
-
-(defun ep-search (query)
-  "Search for QUERY in the main Emacs Paper buffer and in Spires."
-  (interactive "sSearch query: ")
-  (let* ((spires-query (ep-ep-spires-guess-query query))
-         (url (ep-ep-spires-url spires-query)))
-    (ep-ep-new-buffer (concat "EP search results: " query)
-       (ep-ep-insert-main-heading (concat "Search results for '" query "'"))
-       (ep-ep-insert-sub-heading "Local results")
-       (let* ((ep-query (ep-ep-search-parse-query spires-query))
-              (entries (ep-ep-filter-entries (ep-ep-extract-entries ep-main-buffer) ep-query)))
-         (ep-ep-format-entries entries))
-       (ep-ep-insert-sub-heading "Spires results"))
-    (message (concat "Looking up '" spires-query "' at Spires"))
-    (url-retrieve url 'ep-ep-spires-query-callback (list (current-buffer)))))
-
-(defun ep-ep-search-parse-query (query)
-  "Parse the Spires formatted QUERY and returns a list of
-cons-cells (BibTeX-field . regexp)."
-  (let ((case-fold-search t)
-        result)
-    (setq query (replace-regexp-in-string "\\+" " " query))
-    (setq query (replace-regexp-in-string "^FIND? " "" query))
-
-    (dolist (elem (split-string query "\\( and \\| AND \\)"))
-      (cond
-       ((string-match "^a " elem)
-        (push (cons "author" (substring elem 2)) result))
-       ((string-match "^d " elem)
-        (push (cons "year" (substring elem 2)) result))
-       ((string-match "^t " elem)
-        (push (cons "title" (substring elem 2)) result))
-       ((string-match "^eprint " elem)
-        (push (cons "eprint" (substring elem 7)) result))
-       ((string-match "^texkey " elem)
-        (push (cons "=key=" (substring elem 7)) result))))
-    result))
-
-(defun ep-spires-update-entry (&optional entry overwrite)
-  "Update ENTRY by getting any missing fields from Spires. If
-ENTRY is nil, default to the current entry. If OVERWRITE is
-non-nil, replace any exisitng fields."
-  (interactive "i\nP")
-  (let* ((entry (or entry ep-ep-current-entry))
-         (query (or(ep-ep-alist-get-value "=key=" entry)
-                   (ep-ep-alist-get-value "eprint" entry)))
-         (spires-entry (when query 
-                         (car (ep-ep-spires-query-entries (ep-ep-spires-guess-query query)))))
-         (modified nil))
-    (cond 
-     ((not query) (message "%s" "The current entry has no key and no preprint number"))
-     ((not spires-entry) (message "%s" "The current entry was not found on Spires"))
-     (t
-      (ep-ep-fix-title spires-entry)
-      (ep-ep-register-undo-edit-entry entry)
-      (dolist (field spires-entry)
-        (let ((field-name (car field))
-              (field-val (cdr field)))
-          (when (and (member field-name ep-bib-fields)
-                     (or (and (not overwrite) 
-                              (not (ep-ep-alist-get-value field-name entry)))
-                         (and overwrite
-                              (not (string-equal field-val (ep-ep-alist-get-value field-name entry))))))
-            (setq modified t))
-          (if (not overwrite)
-              (ep-ep-alist-insert field-name entry field-val)
-            (ep-ep-alist-set field-name entry field-val))))
-      (with-silent-modifications
-        (ep-ep-update-entry entry))
-      (when modified
-        (set-buffer-modified-p t))
-      (message "Entry updated")))))
+(defun ep-ep-fix-note (entry)
+  "Rmove the \"* Temporary entry *\" note from Inspire Beta entries."
+  (when (and (ep-ep-alist-get-value "note" entry)
+             (string-equal (ep-ep-alist-get-value "note" entry) "* Temporary entry *"))
+    (ep-ep-alist-set "note" entry nil)))
 
 ;;  Main buffer
 
@@ -1642,8 +1653,18 @@ non-nil, replace any exisitng fields."
 
 ;; Handling PDF files
 
+(defun ep-ep-url-retrieve-synchronously (url)
+  "Work around `url-retrieve-synchronously` beeing really slow on my Mac."
+  (let ((temp-file-name (concat ep-temp-dir (make-temp-name "ep-")))
+        (buffer (generate-new-buffer (generate-new-buffer-name (concat " *" url "*")))))
+    (when (ep-ep-url-retrieve-file url temp-file-name)
+      (set-buffer buffer)
+      (insert-file-contents temp-file-name))
+    (delete-file temp-file-name)
+    buffer))
+
 (defun ep-ep-url-retrieve-file (url filename)
-  (let ((cmd (concat "curl " url " -s -S -f --create-dirs -o " filename))
+  (let ((cmd (concat "curl '" url "' -s -S -f -m10 --create-dirs -o " filename))
         status)
     (setq status (shell-command cmd))
     (equal status 0)))
@@ -1653,7 +1674,7 @@ non-nil, replace any exisitng fields."
          (root (xml-parse-region (point-min) (point-max)))
          (papers (car root)))
     ;; Don't clutter the file name history
-    (when (string= (car file-name-history) filename)
+    (when (string-equal (car file-name-history) filename)
       (setq file-name-history (cdr file-name-history)))
 
     (kill-buffer xml-buffer)
@@ -1685,7 +1706,7 @@ non-nil, replace any exisitng fields."
     (insert "</papers>\n")
     (save-buffer)
     ;; Don't clutter the file name history
-    (when (string= (car file-name-history) filename)
+    (when (string-equal (car file-name-history) filename)
       (setq file-name-history (cdr file-name-history)))
     (kill-buffer xml-buffer)))
 
