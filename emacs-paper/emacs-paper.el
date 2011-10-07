@@ -1446,6 +1446,12 @@ entries are extracted."
           (ep-ep-replace-regexp "</pre>" "")
           (setq entries (ep-bib-parse-buffer query-buf))))
       (kill-buffer query-buf)
+
+      (dolist (entry entries)
+	(when ep-fix-titles
+	  (ep-ep-fix-title entry))
+	(ep-ep-fix-note entry))
+
       entries)))
 
 (defun ep-ep-inspire-query-entries (query)
@@ -1664,7 +1670,10 @@ cons-cells (BibTeX-field . regexp)."
     buffer))
 
 (defun ep-ep-url-retrieve-file (url filename)
-  (let ((cmd (concat "curl '" url "' -s -S -f -m10 --create-dirs -o " filename))
+  (let* ((quote (if (equal system-type 'windows-nt) 
+		    "\""
+		  "'"))
+	 (cmd (concat "curl " quote url quote " -s -S -f -m10 --create-dirs -o " quote filename quote))
         status)
     (setq status (shell-command cmd))
     (equal status 0)))
