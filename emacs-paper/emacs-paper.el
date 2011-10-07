@@ -445,20 +445,20 @@ nil. Return t if anything was inserted, otherwise nil."
                 (and (ep-ep-field-value "=key=" entry) (ep-ep-field-value "eprint" entry)))
         (insert "\n"))
     
-      (if (string-equal "JHEP" (ep-ep-field-value "journal" entry))
-          (ep-ep-insert-non-nil (ep-ep-propertize-non-nil 
-                                 (ep-ep-field-value "journal" entry) 'face 'italic ) " " 
-                                 (ep-ep-propertize-non-nil 
-                                  (ep-ep-concat-non-nil 
-                                   (ep-ep-substring-non-nil (ep-ep-field-value "year" entry) 2)
-                                   (ep-ep-field-value "volume" entry))
-                                  'face 'bold) ", "
-                                  (ep-ep-field-value "pages" entry) " ")
-        (ep-ep-insert-non-nil (ep-ep-propertize-non-nil (ep-ep-field-value "journal" entry) 
-                                                        'face 'italic ) " "
-                                                        (ep-ep-propertize-non-nil (ep-ep-field-value "volume" entry) 
-                                                                                  'face 'bold) ", "
-                                                                                  (ep-ep-field-value "pages" entry) " "))
+      ;; (if (string-equal "JHEP" (ep-ep-field-value "journal" entry))
+      ;;     (ep-ep-insert-non-nil (ep-ep-propertize-non-nil 
+      ;;                            (ep-ep-field-value "journal" entry) 'face 'italic ) " " 
+      ;;                            (ep-ep-propertize-non-nil 
+      ;;                             (ep-ep-concat-non-nil 
+      ;;                              (ep-ep-substring-non-nil (ep-ep-field-value "year" entry) 2)
+      ;;                              (ep-ep-field-value "volume" entry))
+      ;;                             'face 'bold) ", "
+      ;;                             (ep-ep-field-value "pages" entry) " ")
+      (ep-ep-insert-non-nil (ep-ep-propertize-non-nil (ep-ep-field-value "journal" entry) 
+                                                      'face 'italic ) " "
+                                                      (ep-ep-propertize-non-nil (ep-ep-field-value "volume" entry) 
+                                                                                'face 'bold) ", "
+                                                                                (ep-ep-field-value "pages" entry) " ")
       (ep-ep-insert-non-nil "(" (ep-ep-field-value "year" entry) ")")
       
       (when (ep-ep-field-value "=key=" entry)
