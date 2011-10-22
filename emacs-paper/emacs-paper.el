@@ -57,7 +57,7 @@
   :type 'string)
 
 (defcustom ep-inspire-url 
-  "http://inspirebeta.net/search?p="
+  "http://inspirehep.net/search?p="
   "Base URL used for Inspire queries."
   :type 'string)
 
@@ -1176,7 +1176,7 @@ MARK is 'unmark, unmark ENTRY."
          (url (ep-ep-concat-non-nil ep-arxiv-url "/abs/" (ep-ep-alist-get-value "eprint" entry))))
     (if url
         (browse-url url)
-      (message "There is no preprint number for this entry. Trying at Inpire Beta.")
+      (message "There is no preprint number for this entry. Trying at Inpire.")
       (ep-goto-inspire))))
 
 (defun ep-goto-spires (&optional arg)
@@ -1455,7 +1455,7 @@ entries are extracted."
       entries)))
 
 (defun ep-ep-inspire-query-entries (query)
-  "Perform a Inpire Beta QUERY. Return a list of entries."
+  "Perform a Inpire QUERY. Return a list of entries."
   (save-current-buffer
     (message (concat "Querying Inspire for '" query "'"))
     (let ((query-buf (ep-ep-url-retrieve-synchronously (ep-ep-inspire-url query))))
@@ -1506,7 +1506,7 @@ non-nil, replace any exisitng fields."
       (message "Entry updated")))))
 
 
-;; Searching locally and in Inpire Beta
+;; Searching locally and in Inpire
 
 (defun ep-search (query)
   "Search for QUERY in the main Emacs Paper buffer and in Inspire Beta."
@@ -1519,12 +1519,12 @@ non-nil, replace any exisitng fields."
        (let* ((ep-query (ep-ep-search-parse-query inspire-query))
               (entries (ep-ep-filter-entries (ep-ep-extract-entries ep-main-buffer) ep-query)))
          (ep-ep-format-entries entries))
-       (ep-ep-insert-sub-heading "Inpire Beta results"))
-    (message (concat "Looking up '" inspire-query "' at Inpire Beta"))
+       (ep-ep-insert-sub-heading "Inpire results"))
+    (message (concat "Looking up '" inspire-query "' at Inpire"))
     (url-retrieve url 'ep-ep-inspire-query-callback (list (current-buffer)))))
 
 (defun ep-ep-search-parse-query (query)
-  "Parse the Inpire Beta formatted QUERY and returns a list of
+  "Parse the Inpire formatted QUERY and returns a list of
 cons-cells (BibTeX-field . regexp)."
   (let ((case-fold-search t)
         result)
@@ -1546,7 +1546,7 @@ cons-cells (BibTeX-field . regexp)."
     result))
 
 (defun ep-ep-inspire-query-callback (status buf)
-  "Insert entries returned by a Inpire Beta query. Called by `url-retrieve' in `ep-search'."
+  "Insert entries returned by a Inpire query. Called by `url-retrieve' in `ep-search'."
   (let ((entries (ep-ep-inspire-extract-entries (current-buffer)))
         point)
     (message "Inserting matches from Inpire")
