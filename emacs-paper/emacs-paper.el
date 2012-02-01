@@ -1736,7 +1736,6 @@ cons-cells (BibTeX-field . regexp)."
           (let* ((url (ep-ep-concat-non-nil ep-arxiv-url "/pdf/" eprint ".pdf"))
                  (pdfname (concat eprint ".pdf"))
                  (filename (concat ep-pdf-dir pdfname)))
-            (message "%s" url)
             (if (not (and ep-pdf-file ep-pdf-dir (equal (current-buffer) ep-main-buffer)))
                   (browse-url (concat url ".pdf"))
               (if (not (ep-ep-url-retrieve-file url filename))
