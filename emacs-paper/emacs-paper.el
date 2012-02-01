@@ -1673,7 +1673,7 @@ cons-cells (BibTeX-field . regexp)."
   (let* ((quote (if (equal system-type 'windows-nt) 
 		    "\""
 		  "'"))
-	 (cmd (concat "curl " quote url quote " -s -S -f -m10 --create-dirs -o " quote filename quote))
+	 (cmd (concat "curl " quote url quote " -L -s -S -f -m10 --create-dirs -o " quote filename quote))
         status)
     (setq status (shell-command cmd))
     (equal status 0)))
