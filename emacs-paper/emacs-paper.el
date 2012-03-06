@@ -1737,7 +1737,7 @@ cons-cells (BibTeX-field . regexp)."
                  (pdfname (concat eprint ".pdf"))
                  (filename (concat ep-pdf-dir pdfname)))
             (if (not (and ep-pdf-file ep-pdf-dir (equal (current-buffer) ep-main-buffer)))
-                  (browse-url (concat url ".pdf"))
+                  (browse-url url)
               (if (not (ep-ep-url-retrieve-file url filename))
                   (message "Failed to retrieve file from %s." url)
                 (ep-ep-open-pdf filename)
