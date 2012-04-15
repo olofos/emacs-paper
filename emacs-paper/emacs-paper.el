@@ -123,10 +123,11 @@ filename."
 
 (defun ep-ep-cleanup-whitespace (string)
   "Remove any tabs, newlines and double spaces from STRING."
-  (while (string-match "[\n\t]+" string)
-    (setq string (replace-match " " nil t string)))
-  (while (string-match "  +" string)
-    (setq string (replace-match " " nil t string)))
+  (when string
+    (while (string-match "[\n\t]+" string)
+      (setq string (replace-match " " nil t string)))
+    (while (string-match "  +" string)
+      (setq string (replace-match " " nil t string))))
   string)
 
 (defun ep-ep-string-match-full (regexp string)
@@ -218,14 +219,14 @@ buffer."
 
     (current-buffer)))
 
-(defun ep-bib-save-file (&optional buffer)
+(defun ep-bib-save-file (&optional new-name buffer)
   "Save the entries in the Emacs Paper BUFFER, or the
 `current-buffer', to file as BibTeX entries."
-  (interactive)
+  (interactive "P")
 
   (when buffer (set-buffer buffer))
 
-  (if (and ep-ep-visited-file (not (buffer-modified-p)))
+  (if (and (not new-name) ep-ep-visited-file (not (buffer-modified-p)))
       (message "(No changes need to be saved)")
     (let ((entries (ep-ep-extract-entries))
           no-key)
@@ -240,14 +241,23 @@ buffer."
         (error "Entry has no key")))
 
     (save-excursion
-      (let ((filename (or ep-ep-visited-file (read-file-name "Save to file:")))
+      (let ((filename (or (and (not new-name) ep-ep-visited-file) (read-file-name "Save to file:")))
             (entries (ep-ep-extract-entries)))
         (cond
          ((not filename) (error "Empty filename"))
          ((not entries) (error "The buffer contain no entries"))
          (t
           (ep-bib-save-entries entries filename)
-          (message "%d entries saved to %s" (length entries) ep-ep-visited-file)
+          (message "%d entries saved to %s" (length entries) filename)
+          (setq ep-ep-visited-file filename)
+          
+          (goto-char (point-min))
+          
+          (when (get-text-property (point) :ep-heading)
+            (toggle-read-only -1)
+            (delete-region (point) (next-single-property-change (point) :ep-heading))
+            (ep-ep-insert-main-heading (concat "Emacs Paper -- " (file-name-nondirectory ep-ep-visited-file)))
+            (toggle-read-only +1))
           (set-buffer-modified-p nil)))))))
 
 (defun ep-ep-kill-buffer-query-function ()
@@ -266,7 +276,7 @@ from `save-buffers-kill-terminal'."
     (dolist (buffer ep-ep-file-buffers)
       (when (and (buffer-live-p buffer) (buffer-modified-p buffer))
         (if (y-or-n-p (concat "Save EP buffer " (buffer-name buffer) "?"))
-            (ep-bib-save-file buffer)
+            (ep-bib-save-file nil buffer)
           (setq all-saved nil))))
     (if all-saved
         t
@@ -356,7 +366,10 @@ The file is not saved."
 
 (defun ep-bib-format-entry (entry)
   "Insert ENTRY in current buffer."
-  (insert "@" (ep-ep-field-value "=type=" entry) (bibtex-entry-left-delimiter))
+
+  (insert "@")
+  (ep-ep-insert-non-nil (ep-ep-field-value "=type=" entry))
+  (insert (bibtex-entry-left-delimiter))
   (ep-ep-insert-non-nil (ep-ep-field-value "=key=" entry))
 
   (if (ep-ep-alist-get-value "=content=" entry)
@@ -377,7 +390,7 @@ The file is not saved."
       (ep-bib-save-file))
     (let ((key (ep-ep-field-value "=key=" ep-ep-current-entry)))
       (find-file ep-ep-visited-file)
-      (goto-char 0)
+      (goto-char (point-min))
       (search-forward (concat "{" key))
       (beginning-of-line))))
 
@@ -813,6 +826,7 @@ as (START . END)."
 (define-key ep-ep-mode-map "q" 'ep-quit)
 
 (define-key ep-ep-mode-map "g" 'ep-goto)
+(define-key ep-ep-mode-map (kbd "RET") 'ep-goto-pdf)
 
 (define-key ep-ep-mode-map (kbd "C-/") 'ep-undo)
 (define-key ep-ep-mode-map (kbd "C-_") 'ep-undo)
@@ -920,7 +934,7 @@ then go to the first entry and turn on Emacs Paper mode."
     (switch-to-buffer edit-buffer)
     (buffer-disable-undo)
     (ep-bib-format-entry entry)
-    (goto-char 0)
+    (goto-char (point-min))
     (set-buffer-modified-p nil)
     (buffer-enable-undo)
     (ep-ep-edit-mode)
@@ -1106,7 +1120,7 @@ MARK is 'unmark, unmark ENTRY."
   (let (new-entry)
     (with-temp-buffer
       (yank)
-      (goto-char 0)
+      (goto-char (point-min))
       (setq new-entry (car (ep-bib-parse-buffer (current-buffer)))))
     (if (not new-entry)
         (message "Not a BibTeX entry!")
@@ -1119,7 +1133,8 @@ MARK is 'unmark, unmark ENTRY."
   (let ((entry ep-ep-current-entry))
     (with-temp-buffer
       (ep-bib-format-entry entry)
-      (copy-region-as-kill (point-min) (point-max)))))
+      (copy-region-as-kill (point-min) (point-max))
+      (message "Entry copied to killed ring"))))
 
 (defun ep-kill-entry ()
   "Kill the current entry."
@@ -1160,7 +1175,7 @@ MARK is 'unmark, unmark ENTRY."
   (interactive "P")
   (let* ((collection '(("arXiv abstract" . 1) ("DOI" . 2) ("Spires record" . 3) ("PDF" . 4) ("Inspire record" . 5)))
          (completion-ignore-case t)
-         (answer (completing-read "Go to: " collection nil t)))
+         (answer (completing-read "Go to [PDF]: " collection nil t nil nil "PDF")))
     (case (cdr (assoc answer collection))
       (1 (ep-goto-arxiv-abstract arg))
       (2 (ep-goto-doi arg))
@@ -1257,7 +1272,8 @@ MARK is 'unmark, unmark ENTRY."
                 (setq id (substring id 0 -2)))
 
             (setq entry-list (append entry-list
-                                     (list (list (cons "eprint" id) 
+                                     (list (list (cons "=type=" "Article")
+                                                 (cons "eprint" id) 
                                                  (cons "author" author) 
                                                  (cons "title" title) 
                                                  (cons "abstract" summary) 
@@ -1415,7 +1431,7 @@ arXiv."
          ((string-match " " key)
           (concat "FIND+" (replace-regexp-in-string " " "+" key)))
          ((ep-ep-string-match-full "[0-9]\\{4\\}\\.[0-9]\\{4\\}" key) 
-          (concat "FIND+EPRINT+" key))        ; Match new arxiv identifier
+          (concat "FIND+EPRINT+ARXIV:" key))        ; Match new arxiv identifier
          ((ep-ep-string-match-full "[0-9]\\{7\\}" key) 
           (concat "FIND+EPRINT+hep-th/" key)) ; Match old arxiv identifier
                                               ; (default to hep-th)
@@ -1844,7 +1860,7 @@ cons-cells (BibTeX-field . regexp)."
     (ep-ep-goto-entry entry)))
 
 (defun ep-undo ()
-  "Undo"
+  "Undo last Emacs Paper action"
   (interactive)
 
   (unless (eq last-command 'ep-undo)
@@ -1865,3 +1881,52 @@ cons-cells (BibTeX-field . regexp)."
              (message "Undo!"))
             (redo
              (message "Redo!"))))))))
+
+
+(defun ep-extract-citations (&optional tex-file)
+  "Extracts all BibTeX entries cited in 'tex-file' to a new Emacs Paper buffer"
+  (interactive)
+
+  (let* ((tex-file (or tex-file
+                       (read-file-name (concat "TeX file (" (file-name-nondirectory (buffer-file-name)) "): "))))
+         (aux-file (concat (file-name-sans-extension tex-file) ".aux"))
+         (aux-buf (find-file aux-file))
+         bib-file bib-buf keys entries all-entries)
+
+    (switch-to-buffer aux-buf)
+    (goto-char (point-min))
+    (while (re-search-forward "\\\\bibcite{\\([^}]*\\)}" nil t)
+      (setq keys (cons (match-string 1) keys)))
+
+    (goto-char (point-min))
+    (re-search-forward "\\\\bibdata{\\([^}]*\\)}" nil t)
+
+    (setq bib-file (concat (file-name-directory tex-file) (match-string 1) ".bib"))
+
+    (kill-buffer aux-buf)
+
+    (unless (file-exists-p bib-file)
+      (setq bib-file (read-file-name (concat "File " bib-file 
+                                             " not found. BibTeX file to read entries from: "))))
+
+    (setq bib-buf (ep-bib-load-file bib-file))
+    (setq all-entries (ep-ep-extract-entries bib-buf))
+    (kill-buffer bib-buf)
+
+    ;; Don't clutter the file name history
+    (when (string-equal (car file-name-history) bib-file)
+      (setq file-name-history (cdr file-name-history)))
+    (when (string-equal (car file-name-history) aux-file)
+      (setq file-name-history (cdr file-name-history)))
+
+    (dolist (entry all-entries)
+      (when (or (string-equal (ep-ep-alist-get-value "=type=" entry) "Preamble") 
+                (string-equal (ep-ep-alist-get-value "=type=" entry) "String")
+                (member (ep-ep-alist-get-value "=key=" entry) keys))
+        (setq entries (cons entry entries))))
+
+    (ep-ep-new-buffer (concat "EP extracted entries")
+      (ep-ep-insert-main-heading (concat "Emacs Paper -- Entries extracted from " (file-name-nondirectory bib-file) " cited in " (file-name-nondirectory tex-file)))
+      (ep-ep-format-entries entries))
+    (ep-sort-entries "=key=")
+    (goto-char (point-min))))
