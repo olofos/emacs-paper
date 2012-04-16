@@ -83,6 +83,10 @@ include a single '%s' which will be substituted with the
 filename."
   :type 'string)
 
+(defcustom ep-enable-save-hook t
+  "Search for visiting Emacs Paper buffers when saving a BibTeX file."
+  :type 'boolean)
+
 (defvar ep-main-buffer nil
   "Main Emacs Paper buffer")
 
@@ -275,7 +279,7 @@ from `save-buffers-kill-terminal'."
   (let ((all-saved t))
     (dolist (buffer ep-ep-file-buffers)
       (when (and (buffer-live-p buffer) (buffer-modified-p buffer))
-        (if (y-or-n-p (concat "Save EP buffer " (buffer-name buffer) "?"))
+        (if (y-or-n-p (format "Save EP buffer %s " (buffer-name buffer) "? "))
             (ep-bib-save-file nil buffer)
           (setq all-saved nil))))
     (if all-saved
@@ -335,7 +339,8 @@ parsed entries."
   (save-current-buffer
     (find-file file)
     (ep-bib-format-entries entries)
-    (save-buffer)
+    (let ((ep-enable-save-hook nil))
+      (save-buffer))
     (kill-buffer (current-buffer))))
 
 (defun ep-bib-format-entries (entries)
@@ -350,7 +355,7 @@ The file is not saved."
     (unless (and (buffer-modified-p)
                  (not (y-or-n-p (concat "File " (buffer-name) " has been changed."
                                         " Inserting entries will overwrite these changes."
-                                        " Do you want to continue?"))))
+                                        " Do you want to continue? "))))
       (erase-buffer)
       (insert "This file was created by Emacs Paper.\n\n")
       (let ((progress (make-progress-reporter "Insering entries..." 0 (length entries)))
@@ -392,7 +397,8 @@ The file is not saved."
       (find-file ep-ep-visited-file)
       (goto-char (point-min))
       (search-forward (concat "{" key))
-      (beginning-of-line))))
+      (beginning-of-line)
+      (add-hook 'after-save-hook 'ep-ep-bib-after-save-hook))))
 
 ;;; EP buffer formatting
 
@@ -1555,6 +1561,8 @@ cons-cells (BibTeX-field . regexp)."
         (push (cons "year" (substring elem 2)) result))
        ((string-match "^t " elem)
         (push (cons "title" (substring elem 2)) result))
+       ((string-match "^eprint arxiv:" elem)
+        (push (cons "eprint" (substring elem 13)) result))
        ((string-match "^eprint " elem)
         (push (cons "eprint" (substring elem 7)) result))
        ((string-match "^texkey " elem)
@@ -1590,10 +1598,12 @@ cons-cells (BibTeX-field . regexp)."
                ("}$" . ""))) ; Remove end brace
 
             (replacements
-             '(("AdS(5) *x *S(5)" . "{$\\\\AdS_5 \\\\times \\\\Sphere^5$}")
-               ("AdS(5) *x *S\\*\\*5" . "{$\\\\AdS_5 \\\\times \\\\Sphere^5$}")
-               ("AdS_?5 *x *S^?5" . "{$\\\\AdS_5 \\\\times \\\\Sphere^5$}")
-               ("AdS_?4 *[x\*] *CP[_^]?3" . "{$\\\\AdS_4 \\\\times \\\\CP^3$}")
+             '(("AdS(5) *[x\\*] *S(5)" . "{$\\\\AdS_5 \\\\times \\\\Sphere^5$}")
+               ("AdS(5) *[x\\*] *S\\*\\*5" . "{$\\\\AdS_5 \\\\times \\\\Sphere^5$}")
+               ("AdS_?5 *[x\\*] *S^?5" . "{$\\\\AdS_5 \\\\times \\\\Sphere^5$}")
+               ("AdS_?4 *[x\\*] *CP[_^]?3" . "{$\\\\AdS_4 \\\\times \\\\CP^3$}")
+               ("AdS_?4 */ *CFT_?3" . "{$\\\\AdS_4/\\\\CFT_3$}")
+               ("AdS(3) */ *CFT(2)" . "{$\\\\AdS_3/\\\\CFT_2$}")
                (" +N *= *4" . " {$\\\\superN = 4$}")
                (" +N *= *6" . " {$\\\\superN = 6$}")
                ("^N *= *4" . "{$\\\\superN = 4$}")
@@ -1608,9 +1618,7 @@ cons-cells (BibTeX-field . regexp)."
                ("Sitter" . "{S}itter")
                ("Wilson" . "{W}ilson")
                ("AdS */ *CFT" . "{A}d{S/CFT}")
-               ("AdS_?4 */ *CFT_?3" . "{A}d{S$_4$/CFT$_3$}")
-               ("AdS(3) */ *CFT(2)" . "{A}d{S(3)/CFT(2)}")
-               ("SU(2) *x *SU(2)" . "{$SU(2) \\\\times SU(2)$}")
+               ("SU(2) *x *SU(2)" . "{$\\\\grSU(2) \\\\times \\\\grSU(2)$}")
                ("CP^3\\([^$]\\)" . "{$\\\\CP^3$}\\1")
 
                ("\\([^\\]\\)AdS" . "\\1{A}d{S}")
@@ -1622,7 +1630,7 @@ cons-cells (BibTeX-field . regexp)."
                (" \\([A-Z0-9]+\\) " . " {\\1} ")
                (" \\([A-Z0-9]+\\)$" . " {\\1}")
 
-               ("{A} " . "A "))))
+               ("{\\([A-Z]\\)} " . "\\1 "))))
 
         (dolist (repl pre-replacements)
           (ep-ep-replace-regexp (car repl) (cdr repl)))
@@ -1657,7 +1665,7 @@ cons-cells (BibTeX-field . regexp)."
   (interactive)
   (cond 
    ((not (buffer-live-p ep-main-buffer)) (ep-ep-main-start))
-   ((and (y-or-n-p "Emacs Paper main buffer is already open. Reread the main BibTeX file? (This will kill the buffer).")
+   ((and (y-or-n-p "Emacs Paper main buffer is already open. Reread the main BibTeX file (this will kill the buffer)? ")
          (kill-buffer ep-main-buffer))
     (ep-ep-main-start))
    (t (switch-to-buffer ep-main-buffer))))
@@ -1887,17 +1895,20 @@ cons-cells (BibTeX-field . regexp)."
   "Extracts all BibTeX entries cited in 'tex-file' to a new Emacs Paper buffer"
   (interactive)
 
+  ;; Ask user for the name of the TeX file and find aux file.
   (let* ((tex-file (or tex-file
                        (read-file-name (concat "TeX file (" (file-name-nondirectory (buffer-file-name)) "): "))))
          (aux-file (concat (file-name-sans-extension tex-file) ".aux"))
          (aux-buf (find-file aux-file))
          bib-file bib-buf keys entries all-entries)
 
+    ;; Find citations
     (switch-to-buffer aux-buf)
     (goto-char (point-min))
     (while (re-search-forward "\\\\bibcite{\\([^}]*\\)}" nil t)
       (setq keys (cons (match-string 1) keys)))
 
+    ;; Find BibTeX file name
     (goto-char (point-min))
     (re-search-forward "\\\\bibdata{\\([^}]*\\)}" nil t)
 
@@ -1919,14 +1930,47 @@ cons-cells (BibTeX-field . regexp)."
     (when (string-equal (car file-name-history) aux-file)
       (setq file-name-history (cdr file-name-history)))
 
+    ;; Extract cited entries, plus string entries and the preamble
     (dolist (entry all-entries)
       (when (or (string-equal (ep-ep-alist-get-value "=type=" entry) "Preamble") 
                 (string-equal (ep-ep-alist-get-value "=type=" entry) "String")
                 (member (ep-ep-alist-get-value "=key=" entry) keys))
         (setq entries (cons entry entries))))
 
+    ;; Construct new EP buffer
     (ep-ep-new-buffer (concat "EP extracted entries")
       (ep-ep-insert-main-heading (concat "Emacs Paper -- Entries extracted from " (file-name-nondirectory bib-file) " cited in " (file-name-nondirectory tex-file)))
       (ep-ep-format-entries entries))
     (ep-sort-entries "=key=")
     (goto-char (point-min))))
+
+
+(defun ep-ep-bib-after-save-hook ()
+  "Check if there are any visiting Emacs Paper buffers when saving a BibTeX file."
+  (save-excursion
+    (when (and ep-enable-save-hook
+               (equal major-mode 'bibtex-mode)) ;; Only check when saving a BibTeX buffer
+
+      (let ((saved-file-name (expand-file-name (buffer-file-name)))
+            ep-buffer)
+
+        ;; Is it the main Emacs Paper buffer that is being changed?
+        (if (string-equal saved-file-name (expand-file-name ep-main-bib-file))
+            (when (y-or-n-p (concat "Main Emacs Paper BibTeX database changed. Reload Emacs Paper main buffer (this will close " saved-file-name ")? "))
+              ;; Close and reopen the main buffer
+              (kill-buffer ep-main-buffer)
+              (ep-main))
+
+          ;; Search for Emacs Papers visiting the newly saved file. Note that we actually only find the LAST buffer visiting the file...
+          (dolist (buf (buffer-list))
+            (set-buffer buf)
+            (when (and (equal major-mode 'ep-ep-mode)
+                       (string-equal (expand-file-name ep-ep-visited-file) 
+                                     saved-file-name))
+              (setq ep-buffer (current-buffer))))
+          (when (and ep-buffer
+                     (y-or-n-p (concat "BibTeX file visited by Emacs Paper buffer " (buffer-name ep-buffer) " changed. "
+                                       "Reload Emacs Paper buffer (this will close " saved-file-name ")? " )))
+            ;; Close and reopen the visiting buffer
+            (kill-buffer ep-buffer)
+            (ep-bib-load-file saved-file-name)))))))
