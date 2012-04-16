@@ -398,6 +398,37 @@ The file is not saved."
       (beginning-of-line)
       (add-hook 'after-save-hook 'ep-ep-bib-after-save-hook))))
 
+(defun ep-ep-bib-after-save-hook ()
+  "Check if there are any visiting Emacs Paper buffers when saving a BibTeX file."
+  (save-excursion
+    (when (and ep-enable-save-hook
+               (equal major-mode 'bibtex-mode)) ;; Only check when saving a BibTeX buffer
+
+      (let ((saved-file-name (expand-file-name (buffer-file-name)))
+            ep-buffer)
+
+        ;; Is it the main Emacs Paper buffer that is being changed?
+        (if (string-equal saved-file-name (expand-file-name ep-main-bib-file))
+            (when (y-or-n-p (concat "Main Emacs Paper BibTeX database changed. Reload Emacs Paper main buffer (this will close " saved-file-name ")? "))
+              ;; Close and reopen the main buffer
+              (kill-buffer ep-main-buffer)
+              (ep-main))
+
+          ;; Search for Emacs Papers visiting the newly saved file. Note that we actually only find the LAST buffer visiting the file...
+          (dolist (buf (buffer-list))
+            (set-buffer buf)
+            (when (and (equal major-mode 'ep-ep-mode)
+                       (string-equal (expand-file-name ep-ep-visited-file) 
+                                     saved-file-name))
+              (setq ep-buffer (current-buffer))))
+          (when (and ep-buffer
+                     (y-or-n-p (concat "BibTeX file visited by Emacs Paper buffer " (buffer-name ep-buffer) " changed. "
+                                       "Reload Emacs Paper buffer (this will close " saved-file-name ")? " )))
+            ;; Close and reopen the visiting buffer
+            (kill-buffer ep-buffer)
+            (ep-bib-load-file saved-file-name)))))))
+
+
 ;;; EP buffer formatting
 
 ;; Some formatting helper macros
@@ -676,8 +707,7 @@ Any Preamble and String entries are sorted before any other entries."
   (let ((key (or key 
                  (if interactive
                      (completing-read "Sort by [BibTeX key]: " ep-bib-fields)
-                     "=key=")))
-        preambles)
+                   "=key="))))
 
     (when (string-equal key "")
       (setq key "=key="))
@@ -692,6 +722,8 @@ entries to draw. If FUNC is nil, it defaults to `identity'."
         (current-entry ep-ep-current-entry))
     (goto-char (point-min))
     (toggle-read-only -1)
+
+    ;; Redraw each section separately
     (while (get-text-property (point) :ep-heading)
       (let* ((boundaries (ep-ep-section-entries-boundaries))
              (start (car boundaries))
@@ -701,13 +733,17 @@ entries to draw. If FUNC is nil, it defaults to `identity'."
           (delete-region start end)
           (ep-ep-format-entries entries))
         (widen)))
+
     (toggle-read-only 1)
+
+    ;; Return to the previous entry
     (when (and current-entry (car (ep-ep-entry-boundaries current-entry)))
       (goto-char (car (ep-ep-entry-boundaries current-entry)))
       (ep-ep-highlight-entry))))
 
 (defun ep-ep-filter-entries (entries filters)
-  "Filter ENTRIES. FILTERS should be a list of cons-cells (BibTeX-field . regexp)."
+  "Filter ENTRIES. FILTERS should be a list of
+cons-cells (BibTeX-field . regexp), or a list of regexps."
   (let (res-entries match)
     (dolist (entry entries)
       (setq match t)
@@ -749,8 +785,8 @@ with TAG."
                    (completing-read "Tag or regexp: " ep-ep-common-tags))))
 
       (let* ((buffer-name (buffer-name))
-             (entries (ep-ep-filter-entries 
-                       (ep-ep-extract-entries) (list (cons "ep-tags" tag)))))
+             (entries (ep-ep-filter-entries (ep-ep-extract-entries) 
+                                            (list (cons "ep-tags" tag)))))
         (ep-ep-new-buffer (concat (buffer-name) ":" tag)
           (ep-ep-insert-main-heading (concat "Entries in '" buffer-name "' with tags matching '" tag "'"))
           (ep-ep-format-entries entries)))))
@@ -814,6 +850,8 @@ as (START . END)."
 
   (ep-ep-highlight-entry))
 
+;; Key map for ep-ep-mode
+
 (define-key ep-ep-mode-map "n" 'ep-next-entry-recenter)
 (define-key ep-ep-mode-map "p" 'ep-previous-entry-recenter)
 (define-key ep-ep-mode-map " " 'ep-scroll-up)
@@ -854,6 +892,8 @@ as (START . END)."
   "Major mode for editing Emacs Paper BibTeX entries.
 \\\{ep-ep-edit-mode-map}")
 
+;; Key map for ep-ep-edit-mode
+
 (define-key ep-ep-edit-mode-map "\C-c\C-c" 'ep-ep-edit-done)
 (define-key ep-ep-edit-mode-map "\C-g" 'ep-ep-edit-quit)
 
@@ -875,9 +915,7 @@ then go to the first entry and turn on Emacs Paper mode."
 
 (defun ep-ep-entry-at-point (&optional point)
   "Return the entry at POINT. If POINT is nil, use `point;"
-  (let ((point (if point
-                   point
-                 (point))))
+  (let ((point (or point (point))))
     (get-text-property point :ep-entry)))
 
 (defun ep-ep-extract-entries (&optional buffer)
@@ -1351,9 +1389,7 @@ to new, cross listed and updated articles."
                                   (title (xml-node-children title-node)))
                              (setq title-list (append title-list title))))
                          title-list)))
-         new-list
-         cross-list
-         updated-list)
+         new-list cross-list updated-list)
     (kill-buffer res-buf)
     (with-temp-buffer
       (dolist (title title-list)
@@ -1362,11 +1398,11 @@ to new, cross listed and updated articles."
         (search-backward-regexp "(arXiv:\\([^ ]*\\) \\(\\[[^]]*\\]\\)? ?\\([^)]*\\))" nil t)
 
         (cond ((string-equal (match-string 3) "UPDATED")
-               (setq updated-list (cons (match-string 1) updated-list)))
+               (push (match-string 1) updated-list))
               ((not (string-equal (match-string 2) (concat "[" category "]")))
-               (setq cross-list (cons (match-string 1) cross-list)))
+               (push  (match-string 1) cross-list))
               (t
-               (setq new-list (cons (match-string 1) new-list))))))
+               (push (match-string 1) new-list)))))
 
     (list (nreverse new-list)
           (nreverse cross-list) 
@@ -1424,7 +1460,6 @@ arXiv."
       (dolist (entry entries-updated)
         (ep-ep-fix-title entry))
 
-
       (ep-ep-new-buffer (concat "EP arXiv: " category)
         (ep-ep-insert-main-heading (concat "New arXiv entries for category " category))
         (ep-ep-format-entries entries-new)
@@ -1439,10 +1474,10 @@ arXiv."
                  (length entries-cross-listed)
                  (length entries-updated))))))
 
-;;; Inspire Beta support
+;;; Inspire support
 
 (defun ep-ep-inspire-guess-query (key)
-  "Guess the Inspire Beta query to find KEY."
+  "Guess the Inspire query to find KEY."
   (concat
 
    (cond ((string-match "FIND " key)
@@ -1498,7 +1533,7 @@ entries are extracted."
         (ep-ep-inspire-extract-entries query-buf)))))
 
 (defun ep-ep-inspire-url (query &optional format)
-  "Construct an url for a Inspire Beta QUERY."
+  "Construct an url for a Inspire QUERY."
   (let ((format (or format "hx")))
     (concat ep-inspire-url
             query
@@ -1544,7 +1579,7 @@ non-nil, replace any exisitng fields."
 ;; Searching locally and in Inpire
 
 (defun ep-search (query)
-  "Search for QUERY in the main Emacs Paper buffer and in Inspire Beta."
+  "Search for QUERY in the main Emacs Paper buffer and in Inspire."
   (interactive "sSearch query: ")
   (let* ((inspire-query (ep-ep-inspire-guess-query query))
          (url (ep-ep-inspire-url inspire-query)))
@@ -1661,7 +1696,7 @@ cons-cells (BibTeX-field . regexp)."
   (ep-ep-update-entry ep-ep-current-entry))
 
 (defun ep-ep-fix-note (entry)
-  "Rmove the \"* Temporary entry *\" note from Inspire Beta entries."
+  "Rmove the \"* Temporary entry *\" note from Inspire entries."
   (when (and (ep-ep-alist-get-value "note" entry)
              (string-equal (ep-ep-alist-get-value "note" entry) "* Temporary entry *"))
     (ep-ep-alist-set "note" entry nil)))
@@ -1821,7 +1856,6 @@ cons-cells (BibTeX-field . regexp)."
 (defvar ep-ep-undo-list '() "Undo list")
 (defvar ep-ep-redo-list '() "Redo list")
 
-
 (defun ep-ep-undo-boundary ()
   (push nil ep-ep-undo-list)
   (push '(undo) ep-ep-undo-list))
@@ -1903,6 +1937,7 @@ cons-cells (BibTeX-field . regexp)."
             (redo
              (message "Redo!"))))))))
 
+;; Extracting cited entries
 
 (defun ep-extract-citations (&optional tex-file)
   "Extracts all BibTeX entries cited in 'tex-file' to a new Emacs Paper buffer"
@@ -1919,7 +1954,7 @@ cons-cells (BibTeX-field . regexp)."
     (switch-to-buffer aux-buf)
     (goto-char (point-min))
     (while (re-search-forward "\\\\bibcite{\\([^}]*\\)}" nil t)
-      (setq keys (cons (match-string 1) keys)))
+      (push (match-string 1) keys))
 
     ;; Find BibTeX file name
     (goto-char (point-min))
@@ -1948,7 +1983,7 @@ cons-cells (BibTeX-field . regexp)."
       (when (or (string-equal (ep-ep-alist-get-value "=type=" entry) "Preamble") 
                 (string-equal (ep-ep-alist-get-value "=type=" entry) "String")
                 (member (ep-ep-alist-get-value "=key=" entry) keys))
-        (setq entries (cons entry entries))))
+        (push entry entries)))
 
     ;; Construct new EP buffer
     (ep-ep-new-buffer (concat "EP extracted entries")
@@ -1956,34 +1991,3 @@ cons-cells (BibTeX-field . regexp)."
       (ep-ep-format-entries entries))
     (ep-sort-entries "=key=")
     (goto-char (point-min))))
-
-
-(defun ep-ep-bib-after-save-hook ()
-  "Check if there are any visiting Emacs Paper buffers when saving a BibTeX file."
-  (save-excursion
-    (when (and ep-enable-save-hook
-               (equal major-mode 'bibtex-mode)) ;; Only check when saving a BibTeX buffer
-
-      (let ((saved-file-name (expand-file-name (buffer-file-name)))
-            ep-buffer)
-
-        ;; Is it the main Emacs Paper buffer that is being changed?
-        (if (string-equal saved-file-name (expand-file-name ep-main-bib-file))
-            (when (y-or-n-p (concat "Main Emacs Paper BibTeX database changed. Reload Emacs Paper main buffer (this will close " saved-file-name ")? "))
-              ;; Close and reopen the main buffer
-              (kill-buffer ep-main-buffer)
-              (ep-main))
-
-          ;; Search for Emacs Papers visiting the newly saved file. Note that we actually only find the LAST buffer visiting the file...
-          (dolist (buf (buffer-list))
-            (set-buffer buf)
-            (when (and (equal major-mode 'ep-ep-mode)
-                       (string-equal (expand-file-name ep-ep-visited-file) 
-                                     saved-file-name))
-              (setq ep-buffer (current-buffer))))
-          (when (and ep-buffer
-                     (y-or-n-p (concat "BibTeX file visited by Emacs Paper buffer " (buffer-name ep-buffer) " changed. "
-                                       "Reload Emacs Paper buffer (this will close " saved-file-name ")? " )))
-            ;; Close and reopen the visiting buffer
-            (kill-buffer ep-buffer)
-            (ep-bib-load-file saved-file-name)))))))
