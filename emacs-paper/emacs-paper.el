@@ -155,8 +155,7 @@ WARNING: evaluates the parameters more than once! Fix this!"
        (list (cons local-key local-val)))))
 
 (defmacro ep-ep-alist-set (key alist val)
-  "Set the value of KEY in ALIST to VAL. Add the entry if it does
-not exist.
+  "Set the value of KEY in ALIST to VAL. Add the entry if it does not exist.
 WARNING: evaluates the parameters more than once! Fix this!"
   `(let* ((local-key ,key)
           (local-val ,val)
@@ -196,8 +195,7 @@ WARNING: evaluates the parameters more than once! Fix this!"
 ;;; Loading and saving BibTeX files
 
 (defun ep-bib-load-file (file)
-  "Load a BibTex FILE and display it in a new Emacs Paper
-buffer."
+  "Load a BibTex FILE and display it in a new Emacs Paper buffer."
   (interactive "FLoad BibTeX file: ")
 
   (let* ((file-buf (find-file file))
@@ -644,18 +642,33 @@ point. With a non-nil argument, skip N entries backwards."
     (cons start end)))
 
 (defun ep-ep-sort-function (key)
-  "Returns a function that sorts entrie by KEY."
+  "Returns a function that sorts entries by KEY.
+Any Preamble and String entries are sorted before any other entries."
   (lexical-let ((key key))
     (lambda (entries)
       (sort entries (lambda (entry-a entry-b)
-                      (cond 
-                       ((string-equal (ep-ep-alist-get-value "=type=" entry-b) "Preamble") nil)
-                       ((string-equal (ep-ep-alist-get-value "=type=" entry-a) "Preamble") t)
-                       ((string-equal (ep-ep-alist-get-value "=type=" entry-b) "String") nil)
-                       ((string-equal (ep-ep-alist-get-value "=type=" entry-a) "String") t)
-                       (t
-                        (string-lessp (ep-ep-alist-get-value key entry-a)
-                                      (ep-ep-alist-get-value key entry-b)))))))))
+                      (let ((type-a (ep-ep-alist-get-value "=type=" entry-a))
+                            (type-b (ep-ep-alist-get-value "=type=" entry-b)))
+                        (cond
+                         ((string-equal type-a "Preamble") 
+                          (if (string-equal type-b "Preamble") 
+                              (string-lessp (ep-ep-alist-get-value "=content=" entry-a)
+                                            (ep-ep-alist-get-value "=content=" entry-b))
+                            t))
+
+                         ((string-equal type-b "Preamble") nil)
+
+                         ((string-equal type-a "String") 
+                          (if (string-equal type-b "String")
+                              (string-lessp (ep-ep-alist-get-value "=content=" entry-a)
+                                            (ep-ep-alist-get-value "=content=" entry-b))
+                            t))
+
+                         ((string-equal type-b "String") nil)
+
+                         (t
+                          (string-lessp (ep-ep-alist-get-value key entry-a)
+                                        (ep-ep-alist-get-value key entry-b))))))))))
 
 (defun ep-sort-entries (&optional key interactive)
   "Sort the entries in the current buffer, ordering them by KEY."
