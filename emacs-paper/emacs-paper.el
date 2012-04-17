@@ -186,6 +186,12 @@ WARNING: evaluates the parameters more than once! Fix this!"
 	   (equal (match-beginning 0) 0)
 	   (equal (match-end 0) (length string))))
 
+
+(defun ep-ep-pop-from-file-name-history (filename)
+  "Remove 'filename' from the top of 'file-name-history'."
+  (when (string-equal (car file-name-history) filename)
+    (setq file-name-history (cdr file-name-history))))
+
 ;;; Entry helper functions
 
 (defun ep-ep-field-value (field-name entry)
@@ -426,7 +432,9 @@ The file is not saved."
                                        "Reload Emacs Paper buffer (this will close " saved-file-name ")? " )))
             ;; Close and reopen the visiting buffer
             (kill-buffer ep-buffer)
-            (ep-bib-load-file saved-file-name)))))))
+            (ep-bib-load-file saved-file-name)))
+        ;; TODO: find the edited entry!
+        ))))
 
 
 ;;; EP buffer formatting
@@ -1272,7 +1280,11 @@ MARK is 'unmark, unmark ENTRY."
      ((ep-ep-alist-get-value "=key=" entry)
       (setq query (concat "find+texkey+" (ep-ep-alist-get-value "=key=" entry))))
      ((ep-ep-alist-get-value "eprint" entry)
-      (setq query (concat "find+eprint+" (ep-ep-alist-get-value "eprint" entry)))))
+      (setq query (concat "find+eprint+" 
+                          (if (ep-ep-string-match-full "[0-9]\\{4\\}\\.[0-9]\\{4\\}" (ep-ep-alist-get-value "eprint" entry))
+                              "arxiv:"
+                            "")
+                          (ep-ep-alist-get-value "eprint" entry)))))
     (if query
         (browse-url (concat ep-inspire-url query))
       (message "There is no preprint number for this entry. Trying using DOI.")
@@ -1364,8 +1376,7 @@ a list of strings. Returns a list of entries."
 
         (setq xml-file-buf (find-file xml-file))
         ;; Don't clutter the file name history
-        (when (string-equal (car file-name-history) xml-file)
-            (setq file-name-history (cdr file-name-history)))
+        (ep-ep-pop-from-file-name-history xml-file)
         (setq entries (ep-ep-arxiv-parse-atom-buffer xml-file-buf))
 
         (kill-buffer xml-file-buf)
@@ -1614,7 +1625,9 @@ cons-cells (BibTeX-field . regexp)."
        ((string-match "^eprint " elem)
         (push (cons "eprint" (substring elem 7)) result))
        ((string-match "^texkey " elem)
-        (push (cons "=key=" (substring elem 7)) result))))
+        (push (cons "=key=" (substring elem 7)) result))
+       (t
+        (push elem result))))
     result))
 
 (defun ep-ep-inspire-query-callback (status buf)
@@ -1755,8 +1768,7 @@ cons-cells (BibTeX-field . regexp)."
          (root (xml-parse-region (point-min) (point-max)))
          (papers (car root)))
     ;; Don't clutter the file name history
-    (when (string-equal (car file-name-history) filename)
-      (setq file-name-history (cdr file-name-history)))
+    (ep-ep-pop-from-file-name-history filename)
 
     (kill-buffer xml-buffer)
     
@@ -1786,9 +1798,10 @@ cons-cells (BibTeX-field . regexp)."
         (insert "  </paper>\n")))
     (insert "</papers>\n")
     (save-buffer)
+
     ;; Don't clutter the file name history
-    (when (string-equal (car file-name-history) filename)
-      (setq file-name-history (cdr file-name-history)))
+    (ep-ep-pop-from-file-name-history filename)
+
     (kill-buffer xml-buffer)))
 
 (defun ep-ep-open-pdf (filename)
@@ -1960,23 +1973,23 @@ cons-cells (BibTeX-field . regexp)."
     (goto-char (point-min))
     (re-search-forward "\\\\bibdata{\\([^}]*\\)}" nil t)
 
-    (setq bib-file (concat (file-name-directory tex-file) (match-string 1) ".bib"))
-
-    (kill-buffer aux-buf)
+    (setq bib-file (concat (match-string 1) ".bib"))
+    (unless (file-name-absolute-p bib-file)
+      (setq bib-file (concat (file-name-directory tex-file) bib-file)))
 
     (unless (file-exists-p bib-file)
-      (setq bib-file (read-file-name (concat "File " bib-file 
-                                             " not found. BibTeX file to read entries from: "))))
+      (setq bib-file (read-file-name (concat "File " bib-file " not found. "
+                                             "BibTeX file to read entries from: "))))
+
+    (kill-buffer aux-buf)
 
     (setq bib-buf (ep-bib-load-file bib-file))
     (setq all-entries (ep-ep-extract-entries bib-buf))
     (kill-buffer bib-buf)
 
     ;; Don't clutter the file name history
-    (when (string-equal (car file-name-history) bib-file)
-      (setq file-name-history (cdr file-name-history)))
-    (when (string-equal (car file-name-history) aux-file)
-      (setq file-name-history (cdr file-name-history)))
+    (ep-ep-pop-from-file-name-history bib-file)
+    (ep-ep-pop-from-file-name-history aux-file)
 
     ;; Extract cited entries, plus string entries and the preamble
     (dolist (entry all-entries)
