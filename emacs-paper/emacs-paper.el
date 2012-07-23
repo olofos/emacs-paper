@@ -895,6 +895,7 @@ as (START . END)."
 
 (define-key ep-ep-mode-map "g" 'ep-goto)
 (define-key ep-ep-mode-map (kbd "RET") 'ep-goto-pdf)
+(define-key ep-ep-mode-map "l" 'ep-inspire-latex-entry)
 
 (define-key ep-ep-mode-map (kbd "C-/") 'ep-undo)
 (define-key ep-ep-mode-map (kbd "C-_") 'ep-undo)
@@ -1264,17 +1265,7 @@ MARK is 'unmark, unmark ENTRY."
 (defun ep-goto-inspire (&optional arg)
   "Go to the Inspire record of the current entry."
   (interactive "P")
-  (let* ((entry ep-ep-current-entry)
-         (query nil))
-    (cond 
-     ((ep-ep-alist-get-value "=key=" entry)
-      (setq query (concat "find+texkey+" (ep-ep-alist-get-value "=key=" entry))))
-     ((ep-ep-alist-get-value "eprint" entry)
-      (setq query (concat "find+eprint+" 
-                          (if (ep-ep-string-match-full "[0-9]\\{4\\}\\.[0-9]\\{4\\}" (ep-ep-alist-get-value "eprint" entry))
-                              "arxiv:"
-                            "")
-                          (ep-ep-alist-get-value "eprint" entry)))))
+  (let* ((query (ep-ep-inspire-entry-query)))
     (if query
         (browse-url (concat ep-inspire-url query))
       (message "There is no preprint number for this entry. Trying using DOI.")
@@ -1289,6 +1280,32 @@ MARK is 'unmark, unmark ENTRY."
     (if url
         (browse-url url)
       (message "There is no DOI for the current entry."))))
+
+(defun ep-inspire-latex-entry (&optional entry)
+  "Copy the LaTeX entry from Inspire correpsonding to ENTRY to the
+kill ring. Default to the current entry."
+  (interactive "P")
+  (save-excursion
+    (let ((query (ep-ep-inspire-entry-query entry)))
+      (when query
+          (let ((res-buf (ep-ep-url-retrieve-synchronously (ep-ep-inspire-url query "hlxu"))))
+            (set-buffer res-buf)
+            (goto-char 0)
+            (let* ((start (progn (goto-char (point-min))
+                                 (search-forward "<pre>" nil 't) 
+                                 (point)))
+                   (end (progn (goto-char (point-max))
+                               (search-backward "</pre>" nil 't) 
+                               (point))))
+              (if (not (< start end))
+                  (message "No Inspire LaTeX entry found!")
+                (narrow-to-region start end)
+                (ep-ep-replace-regexp "&nbsp;" "")
+                (ep-ep-replace-regexp "<br>" "\n")
+                (copy-region-as-kill (point-min) (point-max))
+                (message "LaTeX entry copied to killed ring")))
+            (kill-buffer res-buf))))))
+
 
 ;;; Connect to the arXiv 
 
@@ -1520,8 +1537,6 @@ from the last DAYS days."
 
 (defun ep-ep-inspire-guess-query (key)
   "Guess the Inspire query to find KEY."
-  (concat
-
    (cond ((string-match "FIND " key)
           (replace-regexp-in-string " " "+" key))
          ((string-match " " key)
@@ -1535,7 +1550,21 @@ from the last DAYS days."
          ((ep-ep-string-match-full "[A-Za-z']*:[0-9]\\{4\\}[a-z]\\{2\\}[a-z]?" key) 
           (concat "FIND+TEXKEY+" key))        ; Match Inspire key
          (t
-          (concat "FIND+A+" key)))))          ; Default to author search
+          (concat "FIND+A+" key))))           ; Default to author search
+
+(defun ep-ep-inspire-entry-query (&optional entry)
+  "Return a query to find the Inspire record for ENTRY.
+Default to the current entry"
+  (let* ((entry (or entry ep-ep-current-entry)))
+    (cond 
+     ((ep-ep-alist-get-value "=key=" entry)
+      (concat "find+texkey+" (ep-ep-alist-get-value "=key=" entry)))
+     ((ep-ep-alist-get-value "eprint" entry)
+      (concat "find+eprint+" 
+              (if (ep-ep-string-match-full "[0-9]\\{4\\}\\.[0-9]\\{4\\}" (ep-ep-alist-get-value "eprint" entry))
+                  "arxiv:"
+                "")
+              (ep-ep-alist-get-value "eprint" entry))))))
 
 (defun ep-ep-inspire-extract-entries (query-buf)
   "Extract entries from a buffer resulting from a Inspire query
