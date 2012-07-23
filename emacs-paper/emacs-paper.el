@@ -484,7 +484,15 @@ nil. Return t if anything was inserted, otherwise nil."
       (or (ep-ep-insert-non-nil (ep-ep-field-value "=key=" entry))
           (ep-ep-insert-non-nil (ep-ep-field-value "eprint" entry)  " "
                                 "[" (ep-ep-field-value "primaryClass" entry) "]")
-          (ep-ep-insert-non-nil " " (ep-ep-field-value "eprint" entry)))
+          (ep-ep-insert-non-nil (ep-ep-field-value "eprint" entry)))
+
+      (cond
+       ((and (ep-ep-field-value "=ep-updated=" entry) (ep-ep-field-value "=ep-cross-list=" entry))
+        (insert " (cross-list, updated)"))
+       ((ep-ep-field-value "=ep-updated=" entry)
+        (insert " (updated)"))
+       ((ep-ep-field-value "=ep-cross-list=" entry)
+        (insert " (cross-list)")))
 
       (when (and (ep-ep-field-value "=key=" entry) ep-pdf-list (ep-ep-alist-get-value (ep-ep-field-value "=key=" entry) ep-pdf-list))
         (insert " (PDF)"))
@@ -1314,15 +1322,20 @@ MARK is 'unmark, unmark ENTRY."
           (let* ((title-node (car (xml-get-children entry 'title)))
                  (summary-node (car (xml-get-children entry 'summary)))
                  (id-node (car (xml-get-children entry 'id)))
-                 (category-node (car (xml-get-children entry 'category)))
+                 (category-node (car (xml-get-children entry 'arxiv:primary_category)))
                  (comment-node (car (xml-get-children entry 'arxiv:comment)))
+                 (updated-node (car (xml-get-children entry 'updated)))
+                 (published-node (car (xml-get-children entry 'published)))
                  (title (car (xml-node-children title-node)))
                  (summary (car (xml-node-children summary-node)))
                  (id (car (xml-node-children id-node)))
                  (category (xml-get-attribute category-node 'term))
                  (comment (car (xml-node-children comment-node)))
+                 (published (car (xml-node-children published-node)))
+                 (updated (car (xml-node-children updated-node)))
                  (author-list nil)
                  (author ""))
+
             (dolist (author-node (xml-get-children entry 'author))
               (setq author-list (append (cddar (xml-get-children author-node 'name))
                                         author-list)))
@@ -1347,47 +1360,52 @@ MARK is 'unmark, unmark ENTRY."
                                                  (cons "title" title) 
                                                  (cons "abstract" summary) 
                                                  (cons "arxiv-comment" comment)
-                                                 (cons "primaryClass" category)))))))))
+                                                 (cons "primaryClass" category)
+                                                 (cons "=ep-updated=" (unless (string-equal published updated) updated))))))))))
     entry-list))
 
 (defun ep-ep-arxiv-id-query (id-list)
   "Query the arxiv for the articles with identifiers in ID-LIST,
 a list of strings. Returns a list of entries."
   (when id-list
-    (save-excursion
-      (let* ((id-string (mapconcat 'identity id-list ","))
-             (url (concat ep-arxiv-api-url "?id_list="
-                          id-string "&start=0&max_results=" 
-                          (number-to-string (length id-list))))
-             (res-buf (ep-ep-url-retrieve-synchronously url))
-             (xml-file (make-temp-file "ep-arxiv-" nil ".xml"))
-             xml-file-buf
-             entries)
-        (set-buffer res-buf)
-        (goto-char (point-min))
-        (search-forward "<?xml")
-        (beginning-of-line)
+    (let* ((id-string (mapconcat 'identity id-list ","))
+           (query (concat "id_list=" id-string "&start=0&max_results=" (number-to-string (length id-list)))))
+      (ep-ep-arxiv-api-query query))))
 
-        ;; Write the XML data to a temporary file in order to
-        ;; correctly interpret the utf-8 encoding (arXiv returns utf-8
-        ;; encoded XML data but uses an iso-8859-1 HTTP header).
-        (write-region (point) (point-max) xml-file)
-        (kill-buffer res-buf)
+(defun ep-ep-arxiv-api-query (query)
+  "Query the arxiv API using QUERY. Returns a list of entries."
+  (save-excursion
+    (let* ((url (concat ep-arxiv-api-url "?" query))
+           (res-buf (ep-ep-url-retrieve-synchronously url))
+           (xml-file (make-temp-file "ep-arxiv-" nil ".xml"))
+           xml-file-buf
+           entries)
 
-        (setq xml-file-buf (find-file xml-file))
-        ;; Don't clutter the file name history
-        (ep-ep-pop-from-file-name-history xml-file)
-        (setq entries (ep-ep-arxiv-parse-atom-buffer xml-file-buf))
+      (set-buffer res-buf)
+      (goto-char (point-min))
+      (search-forward "<?xml")
+      (beginning-of-line)
 
-        (kill-buffer xml-file-buf)
-        (delete-file xml-file)
+      ;; Write the XML data to a temporary file in order to
+      ;; correctly interpret the utf-8 encoding (arXiv returns utf-8
+      ;; encoded XML data but uses an iso-8859-1 HTTP header).
+      (write-region (point) (point-max) xml-file)
+      (kill-buffer res-buf)
 
-        entries))))
+      (setq xml-file-buf (find-file xml-file))
+      ;; Don't clutter the file name history
+      (ep-ep-pop-from-file-name-history xml-file)
+      (setq entries (ep-ep-arxiv-parse-atom-buffer xml-file-buf))
+
+      (kill-buffer xml-file-buf)
+      (delete-file xml-file)
+
+      entries)))
 
 (defun ep-ep-arxiv-get-new-ids (category)
   "Retrive new entries from the arXiv for CATEGORY. Returns a
 tripplet with three lists of article identifiers, corresponding
-to new, cross listed and updated articles."
+to new, cross-listed and updated articles."
   (let* ((res-buf (ep-ep-url-retrieve-synchronously (concat ep-arxiv-rss-url category)))
          (title-list (save-excursion
                        (set-buffer res-buf)
@@ -1467,23 +1485,54 @@ arXiv."
       (dolist (entry entries-new)
         (ep-ep-fix-title entry))
       (dolist (entry entries-cross-listed)
-        (ep-ep-fix-title entry))
+        (ep-ep-fix-title entry)
+        (ep-ep-alist-set "=ep-cross-list=" entry category))
       (dolist (entry entries-updated)
-        (ep-ep-fix-title entry))
+        (ep-ep-fix-title entry)
+        (unless (string-equal (ep-ep-alist-get-value "primaryClass" entry) category)
+          (ep-ep-alist-set "=ep-cross-list=" entry category)))
 
       (ep-ep-new-buffer (concat "EP arXiv: " category)
         (ep-ep-insert-main-heading (concat "New arXiv entries for category " category))
         (ep-ep-format-entries entries-new)
 
-        (ep-ep-insert-sub-heading "Cross listed entries")
+        (ep-ep-insert-sub-heading "Cross-listed entries")
         (ep-ep-format-entries entries-cross-listed)
 
         (ep-ep-insert-sub-heading  "Updated entries")
         (ep-ep-format-entries entries-updated)
-        (ep-ep-message "Showing %d new entries, %d cross listed entries and %d updated entries."
+        (ep-ep-message "Showing %d new entries, %d cross-listed entries and %d updated entries."
                  (length entries-new)
                  (length entries-cross-listed)
                  (length entries-updated))))))
+
+
+(defun ep-arxiv-catch-up (category days)
+  "Create an Emacs Paper buffer showing the entries in CATEGORY
+from the last DAYS days."
+  (interactive
+   (list (read-string (concat "arXiv category [" ep-arxiv-default-category "]: ") nil nil "hep-th")
+         (read-number "Number of days: ")))
+
+  (message "Fetching entries from the last %d days on %s" days category)
+
+  (let* ((end-date (date-to-time (format-time-string "%Y-%m-%d %Z")))
+         (start-date (subtract-time end-date (days-to-time days)))
+         (start (format-time-string "%Y%m%d" start-date))
+         (end (format-time-string "%Y%m%d" end-date))
+         (query (concat "search_query=cat:" category "+AND+lastUpdatedDate:%5b" start "+TO+" end "%5d&max_results=10000&sortBy=submittedDate&sortOrder=descending"))
+         (entries (ep-ep-arxiv-api-query query)))
+
+    (dolist (entry entries)
+      (ep-ep-alist-set "abstract" entry nil)
+      (ep-ep-fix-title entry)
+      (unless (string-equal (ep-ep-alist-get-value "primaryClass" entry) category)
+        (ep-ep-alist-set "=ep-cross-list=" entry category)))
+
+    (ep-ep-new-buffer (concat "ArXiv " start " - " end )
+      (ep-ep-insert-main-heading (concat "ArXiv entries in " category " " start " - " end ))
+      (ep-ep-format-entries entries))))
+
 
 ;;; Inspire support
 
@@ -1824,7 +1873,7 @@ cons-cells (BibTeX-field . regexp)."
             (if (not (and ep-pdf-file ep-pdf-dir (equal (current-buffer) ep-main-buffer)))
                   (browse-url url)
               (if (not (ep-ep-url-retrieve-file url filename))
-                  (message "Failed to retrieve file from %s." url)
+                  (message "Failed to retrieve file from \"%s\"." url)
                 (ep-ep-open-pdf filename)
                 (ep-add-pdf filename))))
         (message "There is no preprint number for this entry. Trying using DOI. You need to manually save the PDF.")
