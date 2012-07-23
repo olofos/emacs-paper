@@ -51,11 +51,6 @@
   "Background color of highlighted entry."
   :type 'color)
 
-(defcustom ep-spires-url 
-  "http://www.slac.stanford.edu/spires/find/hep/www?rawcmd="
-  "Base URL used for Spires queries."
-  :type 'string)
-
 (defcustom ep-inspire-url 
   "http://inspirehep.net/search?p="
   "Base URL used for Inspire queries."
@@ -1246,15 +1241,14 @@ MARK is 'unmark, unmark ENTRY."
 (defun ep-goto (&optional arg)
   "Find this entry online. Query the user about how to look for the entry."
   (interactive "P")
-  (let* ((collection '(("arXiv abstract" . 1) ("DOI" . 2) ("Spires record" . 3) ("PDF" . 4) ("Inspire record" . 5)))
+  (let* ((collection '(("arXiv abstract" . 1) ("DOI" . 2) ("PDF" . 3) ("Inspire record" . 4)))
          (completion-ignore-case t)
          (answer (completing-read "Go to [PDF]: " collection nil t nil nil "PDF")))
     (case (cdr (assoc answer collection))
       (1 (ep-goto-arxiv-abstract arg))
       (2 (ep-goto-doi arg))
-      (3 (ep-goto-spires arg))
-      (4 (ep-goto-pdf arg))
-      (5 (ep-goto-inspire arg))
+      (3 (ep-goto-pdf arg))
+      (4 (ep-goto-inspire arg))
       (otherwise (error "Cannot go to '%s'" answer)))))
 
 (defun ep-goto-arxiv-abstract (&optional arg)
@@ -1266,18 +1260,6 @@ MARK is 'unmark, unmark ENTRY."
         (browse-url url)
       (message "There is no preprint number for this entry. Trying at Inpire.")
       (ep-goto-inspire))))
-
-(defun ep-goto-spires (&optional arg)
-  "Go to the Spires record of the current entry."
-  (interactive "P")
-  (let* ((entry ep-ep-current-entry)
-         (query (or (ep-ep-alist-get-value "=key=" entry)
-                    (ep-ep-alist-get-value "eprint" entry)))
-         (url (when query (ep-ep-spires-url (ep-ep-spires-guess-query query) "www"))))
-    (if url
-        (browse-url url)
-      (message "There is no preprint number for this entry. Trying using DOI.")
-      (ep-goto-doi))))
 
 (defun ep-goto-inspire (&optional arg)
   "Go to the Inspire record of the current entry."
@@ -1551,12 +1533,12 @@ from the last DAYS days."
          ((ep-ep-string-match-full "[a-z\\-]+/[0-9]\\{7\\}" key) 
           (concat "FIND+EPRINT+" key))        ; Match old arxiv identifier
          ((ep-ep-string-match-full "[A-Za-z']*:[0-9]\\{4\\}[a-z]\\{2\\}[a-z]?" key) 
-          (concat "FIND+TEXKEY+" key))        ; Match SPIRES key
+          (concat "FIND+TEXKEY+" key))        ; Match Inspire key
          (t
           (concat "FIND+A+" key)))))          ; Default to author search
 
 (defun ep-ep-inspire-extract-entries (query-buf)
-  "Extract entries from a buffer resulting from a Inspires query
+  "Extract entries from a buffer resulting from a Inspire query
 in QUERY-BUF. Return a list of entries. Kill QUERY-BUF after the
 entries are extracted."
   (save-current-buffer
