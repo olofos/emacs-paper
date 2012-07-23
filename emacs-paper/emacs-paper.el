@@ -1472,7 +1472,7 @@ arXiv."
   "Show new entries at the arXiv for CATEGORY."
   (interactive
    (list (read-string (concat "arXiv category [" ep-arxiv-default-category "]: ") 
-                      nil nil "hep-th")))
+                      nil nil ep-arxiv-default-category)))
                             
   (let* ((ids (ep-ep-arxiv-get-new-ids category))
          (entries-new (ep-ep-arxiv-id-query (car ids)))
@@ -1511,7 +1511,7 @@ arXiv."
   "Create an Emacs Paper buffer showing the entries in CATEGORY
 from the last DAYS days."
   (interactive
-   (list (read-string (concat "arXiv category [" ep-arxiv-default-category "]: ") nil nil "hep-th")
+   (list (read-string (concat "arXiv category [" ep-arxiv-default-category "]: ") nil nil ep-arxiv-default-category)
          (read-number "Number of days: ")))
 
   (message "Fetching entries from the last %d days on %s" days category)
@@ -1547,8 +1547,7 @@ from the last DAYS days."
          ((ep-ep-string-match-full "[0-9]\\{4\\}\\.[0-9]\\{4\\}" key) 
           (concat "FIND+EPRINT+ARXIV:" key))        ; Match new arxiv identifier
          ((ep-ep-string-match-full "[0-9]\\{7\\}" key) 
-          (concat "FIND+EPRINT+hep-th/" key)) ; Match old arxiv identifier
-                                              ; (default to hep-th)
+          (concat "FIND+EPRINT+" ep-arxiv-default-category "/" key)) ; Match old arxiv identifier
          ((ep-ep-string-match-full "[a-z\\-]+/[0-9]\\{7\\}" key) 
           (concat "FIND+EPRINT+" key))        ; Match old arxiv identifier
          ((ep-ep-string-match-full "[A-Za-z']*:[0-9]\\{4\\}[a-z]\\{2\\}[a-z]?" key) 
