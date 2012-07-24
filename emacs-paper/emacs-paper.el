@@ -1223,7 +1223,7 @@ MARK is 'unmark, unmark ENTRY."
     (toggle-read-only 1)))
          
 (defun ep-import-marked-entries ()
-  "Import all marked entries to the main Emaca Paper buffer."
+  "Import all marked entries to the main Emacs Paper buffer."
   (interactive)
   (let ((marked-entries (ep-ep-extract-marked-entries))
         (buffer ep-main-buffer)
@@ -1336,8 +1336,8 @@ kill ring. Default to the current entry."
                  (author ""))
 
             (dolist (author-node (xml-get-children entry 'author))
-              (setq author-list (append (cddar (xml-get-children author-node 'name))
-                                        author-list)))
+              (push (caddar (xml-get-children author-node 'name))
+                                        author-list))
             (setq author-list (nreverse author-list))
 
             (while author-list
@@ -1345,22 +1345,22 @@ kill ring. Default to the current entry."
                 (1 (setq author (concat author (car author-list))))
                 (2 (setq author (concat author (car author-list) " and ")))
                 (t (setq author (concat author (car author-list) " and " ))))
-              (setq author-list (cdr author-list)))
+              (pop author-list))
 
             (if (string-equal (substring id 0 21) "http://arxiv.org/abs/")
                 (setq id (substring id 21)))
             (if (string-equal (substring id -2 -1) "v")
                 (setq id (substring id 0 -2)))
 
-            (setq entry-list (append entry-list
-                                     (list (list (cons "=type=" "Article")
-                                                 (cons "eprint" id) 
-                                                 (cons "author" author) 
-                                                 (cons "title" title) 
-                                                 (cons "abstract" summary) 
-                                                 (cons "arxiv-comment" comment)
-                                                 (cons "primaryClass" category)
-                                                 (cons "=ep-updated=" (unless (string-equal published updated) updated))))))))))
+            (push (list (cons "=type=" "Article")
+                        (cons "eprint" id) 
+                        (cons "author" author) 
+                        (cons "title" title) 
+                        (cons "abstract" summary) 
+                        (cons "arxiv-comment" comment)
+                        (cons "primaryClass" category)
+                        (cons "=ep-updated=" (unless (string-equal published updated) updated)))
+                  entry-list)))))
     entry-list))
 
 (defun ep-ep-arxiv-id-query (id-list)
@@ -1414,8 +1414,8 @@ to new, cross-listed and updated articles."
                               title-list)
                          (dolist (item items)
                            (let* ((title-node (car (xml-get-children item 'title)))
-                                  (title (xml-node-children title-node)))
-                             (setq title-list (append title-list title))))
+                                  (title (car (xml-node-children title-node))))
+                             (push title title-list)))
                          title-list)))
          new-list cross-list updated-list)
     (kill-buffer res-buf)
@@ -1432,9 +1432,7 @@ to new, cross-listed and updated articles."
               (t
                (push (match-string 1) new-list)))))
 
-    (list (nreverse new-list)
-          (nreverse cross-list) 
-          (nreverse updated-list))))
+    (list new-list cross-list updated-list)))
 
 (defun ep-arxiv-update-entry (&optional entry overwrite)
   "Update ENTRY by getting any missing fields from
@@ -1474,9 +1472,9 @@ arXiv."
                       nil nil ep-arxiv-default-category)))
                             
   (let* ((ids (ep-ep-arxiv-get-new-ids category))
-         (entries-new (ep-ep-arxiv-id-query (car ids)))
-         (entries-cross-listed (ep-ep-arxiv-id-query (cadr ids)))
-         (entries-updated (ep-ep-arxiv-id-query (caddr ids))))
+         (entries-new (nreverse (ep-ep-arxiv-id-query (car ids))))
+         (entries-cross-listed (nreverse (ep-ep-arxiv-id-query (cadr ids))))
+         (entries-updated (nreverse (ep-ep-arxiv-id-query (caddr ids)))))
 
     (if (not entries-new)
         (ep-ep-message "No new arXiv entries in %s" category)
@@ -2020,7 +2018,7 @@ cons-cells (BibTeX-field . regexp)."
                        (read-file-name (concat "TeX file (" (file-name-nondirectory (buffer-file-name)) "): "))))
          (aux-file (concat (file-name-sans-extension tex-file) ".aux"))
          (aux-buf (find-file aux-file))
-         bib-file bib-buf keys entries all-entries)
+         bib-file bib-buf keys entries all-entries found-keys missing-keys)
 
     ;; Find citations
     (switch-to-buffer aux-buf)
@@ -2052,10 +2050,22 @@ cons-cells (BibTeX-field . regexp)."
 
     ;; Extract cited entries, plus string entries and the preamble
     (dolist (entry all-entries)
-      (when (or (string-equal (ep-ep-alist-get-value "=type=" entry) "Preamble") 
-                (string-equal (ep-ep-alist-get-value "=type=" entry) "String")
-                (member (ep-ep-alist-get-value "=key=" entry) keys))
-        (push entry entries)))
+      (cond ((or (string-equal (ep-ep-alist-get-value "=type=" entry) "Preamble") 
+                (string-equal (ep-ep-alist-get-value "=type=" entry) "String"))
+                (push entry entries))
+            ((member (ep-ep-alist-get-value "=key=" entry) keys)
+             (push entry entries)
+             (push (ep-ep-alist-get-value "=key=" entry) found-keys))))
+
+    ;; Check if we found entries corresponding to all cited keys
+
+    (dolist (key keys)
+      (unless (member key found-keys)
+        (push key missing-keys)))
+
+    (when missing-keys
+      (message "No entry found for the following %d entries: %s" (list-length missing-keys)
+               (mapconcat 'identity (sort missing-keys #'string-lessp) ", ")))
 
     ;; Construct new EP buffer
     (ep-ep-new-buffer (concat "EP extracted entries")
