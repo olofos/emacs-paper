@@ -246,22 +246,28 @@ WARNING: evaluates the parameters more than once! Fix this!"
     (save-excursion
       (let ((filename (or (and (not new-name) ep-ep-visited-file) (read-file-name "Save to file:")))
             (entries (ep-ep-extract-entries)))
-        (cond
-         ((not filename) (error "Empty filename"))
-         ((not entries) (error "The buffer contain no entries"))
-         (t
-          (ep-bib-save-entries entries filename)
-          (message "%d entries saved to %s" (length entries) filename)
-          (setq ep-ep-visited-file filename)
-          
-          (goto-char (point-min))
-          
-          (when (get-text-property (point) :ep-heading)
-            (toggle-read-only -1)
-            (delete-region (point) (next-single-property-change (point) :ep-heading))
-            (ep-ep-insert-main-heading (concat "Emacs Paper -- " (file-name-nondirectory ep-ep-visited-file)))
-            (toggle-read-only +1))
-          (set-buffer-modified-p nil)))))))
+        (message "%S: %S" filename ep-ep-visited-file)
+        (if (and (or new-name
+                     (not (string-equal filename ep-ep-visited-file)))
+                 (file-exists-p filename)
+                 (not (y-or-n-p (format "File '%s' exists; overwrite? " filename))))
+            (error "Cancelled")
+          (cond
+           ((not filename) (error "Empty filename"))
+           ((not entries) (error "The buffer contain no entries"))
+           (t
+            (ep-bib-save-entries entries filename)
+            (message "%d entries saved to %s" (length entries) filename)
+            (setq ep-ep-visited-file filename)
+            
+            (goto-char (point-min))
+            
+            (when (get-text-property (point) :ep-heading)
+              (toggle-read-only -1)
+              (delete-region (point) (next-single-property-change (point) :ep-heading))
+              (ep-ep-insert-main-heading (concat "Emacs Paper -- " (file-name-nondirectory ep-ep-visited-file)))
+              (toggle-read-only +1))
+            (set-buffer-modified-p nil))))))))
 
 (defun ep-ep-kill-buffer-query-function ()
   "Check if the current EP buffer is visiting a file and is
@@ -1691,8 +1697,8 @@ cons-cells (BibTeX-field . regexp)."
   "Insert entries returned by a Inpire query. Called by `url-retrieve' in `ep-search'."
   (let ((entries (ep-ep-inspire-extract-entries (current-buffer)))
         point)
-    (message "Inserting matches from Inpire")
     (when (buffer-live-p buf)
+      (message "Inserting matches from Inpire")
       (switch-to-buffer buf)
       (setq point (point))
       (toggle-read-only -1)
