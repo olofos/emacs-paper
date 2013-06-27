@@ -85,12 +85,17 @@ filename."
 (defvar ep-main-buffer nil
   "Main Emacs Paper buffer")
 
-(defvar ep-bib-fields
+(defcustom ep-bib-fields
   '("author" "title" "journal" "volume" "number" "publisher" "year" "month" 
     "edition" "address" "pages" "eprint" "archivePrefix" "primaryClass"
     "doi" "school" "series" "SLACcitation" "note" "ep-tags")
   "BibTeX fields saved by Emacs Paper. The fields are inserted in
   the order of appearance in the list.")
+
+(defcustom ep-inspire-update-bib-fields
+  '("journal" "volume" "number" "publisher" "year" "month" 
+    "edition" "address" "pages" "doi" "series" "note" "ep-tags")
+  "BibTeX fields allowed to be silently updated by `ep-inspire-update-entry'.")
 
 (defvar ep-ep-common-tags '("Printed" "TODO: Print")
   "List of common Emacs Paper tags, used for completion when
@@ -1631,18 +1636,20 @@ non-nil, replace any exisitng fields."
       (ep-ep-fix-title inspire-entry)
       (ep-ep-fix-note inspire-entry)
       (ep-ep-register-undo-edit-entry entry)
+
       (dolist (field inspire-entry)
         (let ((field-name (car field))
               (field-val (cdr field)))
           (when (and (member field-name ep-bib-fields)
-                     (or (and (not overwrite) 
-                              (not (ep-ep-alist-get-value field-name entry)))
-                         (and overwrite
+                     (or (not (ep-ep-alist-get-value field-name entry))
+                         (and (or overwrite 
+                                  (member field-name ep-inspire-update-bib-fields))
                               (not (string-equal field-val (ep-ep-alist-get-value field-name entry))))))
-            (setq modified t))
-          (if (not overwrite)
-              (ep-ep-alist-insert field-name entry field-val)
-            (ep-ep-alist-set field-name entry field-val))))
+            (setq modified t)
+            (if (or overwrite (member field-name ep-inspire-update-bib-fields))
+                (ep-ep-alist-set field-name entry field-val)
+              (ep-ep-alist-insert field-name entry field-val)))))
+
       (with-silent-modifications
         (ep-ep-update-entry entry))
       (when modified
@@ -2079,3 +2086,13 @@ cons-cells (BibTeX-field . regexp)."
       (ep-ep-format-entries entries))
     (ep-sort-entries "=key=")
     (goto-char (point-min))))
+
+(defun ep-next-entry-without-journal ()
+  (interactive)
+
+  (let (found-entry)
+    (while (and (not found-entry) (ep-ep-next-entry))
+      (when (not (ep-ep-alist-get-value "journal" (ep-ep-entry-at-point)))
+        (setq found-entry t)))
+    (unless found-entry
+      (message "No entry without journal field found"))))
