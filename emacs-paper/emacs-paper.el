@@ -1657,6 +1657,18 @@ non-nil, replace any exisitng fields."
       (message "Entry updated")))))
 
 
+(defun ep-next-entry-without-journal ()
+  "Go to the next entry without a \"journal\" field."
+  (interactive)
+
+  (let (found-entry)
+    (while (and (not found-entry) (ep-ep-next-entry))
+      (when (not (ep-ep-alist-get-value "journal" (ep-ep-entry-at-point)))
+        (setq found-entry t)))
+    (unless found-entry
+      (message "No entry without journal field found"))))
+
+
 ;; Searching locally and in Inpire
 
 (defun ep-search (query)
@@ -2086,13 +2098,3 @@ cons-cells (BibTeX-field . regexp)."
       (ep-ep-format-entries entries))
     (ep-sort-entries "=key=")
     (goto-char (point-min))))
-
-(defun ep-next-entry-without-journal ()
-  (interactive)
-
-  (let (found-entry)
-    (while (and (not found-entry) (ep-ep-next-entry))
-      (when (not (ep-ep-alist-get-value "journal" (ep-ep-entry-at-point)))
-        (setq found-entry t)))
-    (unless found-entry
-      (message "No entry without journal field found"))))
