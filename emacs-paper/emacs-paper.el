@@ -1640,13 +1640,14 @@ non-nil, replace any exisitng fields."
       (dolist (field inspire-entry)
         (let ((field-name (car field))
               (field-val (cdr field)))
-          (when (and (member field-name ep-bib-fields)
-                     (or (not (ep-ep-alist-get-value field-name entry))
-                         (and (or overwrite 
-                                  (member field-name ep-inspire-update-bib-fields))
-                              (not (string-equal field-val (ep-ep-alist-get-value field-name entry))))))
+
+          (when (or (not (ep-ep-alist-get-value field-name entry))
+                    (and (or overwrite 
+                             (member field-name ep-inspire-update-bib-fields))
+                         (not (string-equal field-val (ep-ep-alist-get-value field-name entry)))))
+
             (setq modified t)
-            (if (or overwrite (member field-name ep-inspire-update-bib-fields))
+            (if (or overwrite (member field-name ep-inspire-update-bib-fields) (not (ep-ep-alist-get-value field-name entry)))
                 (ep-ep-alist-set field-name entry field-val)
               (ep-ep-alist-insert field-name entry field-val)))))
 
