@@ -1647,7 +1647,7 @@ non-nil, replace any exisitng fields."
                          (not (string-equal field-val (ep-ep-alist-get-value field-name entry)))))
 
             (setq modified t)
-            (if (or overwrite (member field-name ep-inspire-update-bib-fields) (not (ep-ep-alist-get-value field-name entry)))
+            (if (or overwrite (member field-name ep-inspire-update-bib-fields))
                 (ep-ep-alist-set field-name entry field-val)
               (ep-ep-alist-insert field-name entry field-val)))))
 
