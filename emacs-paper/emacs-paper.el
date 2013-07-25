@@ -88,7 +88,7 @@ filename."
 (defcustom ep-bib-fields
   '("author" "title" "journal" "volume" "number" "publisher" "year" "month" 
     "edition" "address" "pages" "eprint" "archivePrefix" "primaryClass"
-    "doi" "school" "series" "SLACcitation" "note" "ep-tags")
+    "doi" "school" "series" "SLACcitation" "note" "crossref""ep-tags")
   "BibTeX fields saved by Emacs Paper. The fields are inserted in
   the order of appearance in the list.")
 
@@ -539,6 +539,10 @@ nil. Return t if anything was inserted, otherwise nil."
         (or (ep-ep-insert-non-nil (ep-ep-field-value "eprint" entry)  " "
                                   "[" (ep-ep-field-value "primaryClass" entry) "]")
             (ep-ep-insert-non-nil (ep-ep-field-value "eprint" entry))))
+
+      (when (ep-ep-field-value "crossref" entry)
+        (ep-ep-insert-non-nil " -> \"" (ep-ep-field-value "crossref" entry) "\""))
+
       (insert ".\n")
       (ep-ep-insert-non-nil "Tags: " (ep-ep-field-value "ep-tags" entry) "\n")
       
@@ -1564,16 +1568,17 @@ from the last DAYS days."
 (defun ep-ep-inspire-entry-query (&optional entry)
   "Return a query to find the Inspire record for ENTRY.
 Default to the current entry"
-  (let* ((entry (or entry ep-ep-current-entry)))
-    (cond 
-     ((ep-ep-alist-get-value "=key=" entry)
-      (concat "find+texkey+" (ep-ep-alist-get-value "=key=" entry)))
-     ((ep-ep-alist-get-value "eprint" entry)
-      (concat "find+eprint+" 
-              (if (ep-ep-string-match-full "[0-9]\\{4\\}\\.[0-9]\\{4\\}" (ep-ep-alist-get-value "eprint" entry))
-                  "arxiv:"
-                "")
-              (ep-ep-alist-get-value "eprint" entry))))))
+  (let* ((entry (or entry ep-ep-current-entry))
+         (key-query (ep-ep-concat-non-nil "texkey+\"" (ep-ep-alist-get-value "=key=" entry) "\""))
+         (eprint-query (ep-ep-concat-non-nil "eprint+" (ep-ep-alist-get-value "eprint" entry))))
+    (ep-ep-concat-non-nil "find+"
+     (cond 
+      ((and key-query eprint-query)
+       (concat key-query "+or+" eprint-query))
+      (key-query
+        key-query)
+      (eprint-query
+        eprint-query)))))
 
 (defun ep-ep-inspire-extract-entries (query-buf)
   "Extract entries from a buffer resulting from a Inspire query
