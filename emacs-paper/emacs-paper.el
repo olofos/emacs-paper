@@ -251,7 +251,7 @@ WARNING: evaluates the parameters more than once! Fix this!"
     (save-excursion
       (let ((filename (or (and (not new-name) ep-ep-visited-file) (read-file-name "Save to file:")))
             (entries (ep-ep-extract-entries)))
-        (message "%S: %S" filename ep-ep-visited-file)
+
         (if (and (or new-name
                      (not (string-equal filename ep-ep-visited-file)))
                  (file-exists-p filename)
@@ -1569,12 +1569,12 @@ from the last DAYS days."
   "Return a query to find the Inspire record for ENTRY.
 Default to the current entry"
   (let* ((entry (or entry ep-ep-current-entry))
-         (key-query (ep-ep-concat-non-nil "texkey+\"" (ep-ep-alist-get-value "=key=" entry) "\""))
-         (eprint-query (ep-ep-concat-non-nil "eprint+" (ep-ep-alist-get-value "eprint" entry))))
-    (ep-ep-concat-non-nil "find+"
+         (key-query (ep-ep-concat-non-nil "TEXKEY+\"" (ep-ep-alist-get-value "=key=" entry) "\""))
+         (eprint-query (ep-ep-concat-non-nil "EPRINT+" (ep-ep-alist-get-value "eprint" entry))))
+    (ep-ep-concat-non-nil "FIND+"
      (cond 
       ((and key-query eprint-query)
-       (concat key-query "+or+" eprint-query))
+       (concat key-query "+OR+" eprint-query))
       (key-query
         key-query)
       (eprint-query
@@ -1629,10 +1629,9 @@ ENTRY is nil, default to the current entry. If OVERWRITE is
 non-nil, replace any exisitng fields."
   (interactive "i\nP")
   (let* ((entry (or entry ep-ep-current-entry))
-         (query (or (ep-ep-alist-get-value "=key=" entry)
-                    (ep-ep-alist-get-value "eprint" entry)))
+         (query (ep-ep-inspire-entry-query entry))
          (inspire-entry (when query 
-                         (car (ep-ep-inspire-query-entries (ep-ep-inspire-guess-query query)))))
+                          (car (ep-ep-inspire-query-entries query))))
          (modified nil))
     (cond 
      ((not query) (message "%s" "The current entry has no key and no preprint number"))
@@ -1846,6 +1845,7 @@ cons-cells (BibTeX-field . regexp)."
   (let* ((quote (if (equal system-type 'windows-nt) 
 		    "\""
 		  "'"))
+         (url (replace-regexp-in-string "\"" "%22" (replace-regexp-in-string "'" "%27" url)))
 	 (cmd (concat "curl " quote url quote " -L -s -S -f -m10 --create-dirs -o " quote filename quote))
         status)
     (setq status (shell-command cmd))
