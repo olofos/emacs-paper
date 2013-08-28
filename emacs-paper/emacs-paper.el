@@ -1841,13 +1841,17 @@ cons-cells (BibTeX-field . regexp)."
     (delete-file temp-file-name)
     buffer))
 
+(defun ep-ep-url-curl-cmd (url filename &optional timeout)
+  "Construct 'curl' command line to save `url` to `filename`"
+  (let ((quote (if (equal system-type 'windows-nt) "\"" "'"))
+	(url (replace-regexp-in-string "\"" "%22" (replace-regexp-in-string "'" "%27" url)))
+	(timeout (or (if (numberp timeout) (number-to-string timeout) timeout)
+		     "10")))
+    (concat "curl " quote url quote " -L -s -S -f -m" timeout " --create-dirs -o " quote filename quote)))
+
 (defun ep-ep-url-retrieve-file (url filename)
-  (let* ((quote (if (equal system-type 'windows-nt) 
-		    "\""
-		  "'"))
-         (url (replace-regexp-in-string "\"" "%22" (replace-regexp-in-string "'" "%27" url)))
-	 (cmd (concat "curl " quote url quote " -L -s -S -f -m10 --create-dirs -o " quote filename quote))
-        status)
+  (let ((cmd (ep-ep-url-curl-cmd url filename))
+	status)
     (setq status (shell-command cmd))
     (equal status 0)))
 
@@ -1901,27 +1905,48 @@ cons-cells (BibTeX-field . regexp)."
          (key (ep-ep-alist-get-value "=key=" entry))
          (eprint (ep-ep-alist-get-value "eprint" entry))
          (pdf (ep-ep-alist-get-value key ep-pdf-list)))
+
     (if (and pdf (not overwrite))
-        (ep-ep-open-pdf (concat ep-pdf-dir pdf))
-      (message "Fetching %s" (or key ""))
+	(ep-ep-open-pdf (concat ep-pdf-dir pdf))
 
       (if eprint
-          (let* ((url (ep-ep-concat-non-nil ep-arxiv-url "/pdf/" eprint ".pdf"))
-                 (pdfname (concat eprint ".pdf"))
-                 (filename (concat ep-pdf-dir pdfname)))
-            (if (not (and ep-pdf-file ep-pdf-dir (equal (current-buffer) ep-main-buffer)))
-                  (browse-url url)
-              (if (not (ep-ep-url-retrieve-file url filename))
-                  (message "Failed to retrieve file from \"%s\"." url)
-                (ep-ep-open-pdf filename)
-                (ep-add-pdf filename))))
-        (message "There is no preprint number for this entry. Trying using DOI. You need to manually save the PDF.")
-        (ep-goto-doi)))))
+	  (let* ((url (ep-ep-concat-non-nil ep-arxiv-url "/pdf/" eprint ".pdf"))
+		 (pdfname (concat eprint ".pdf"))
+		 (filename (concat ep-pdf-dir pdfname)))
+	    (if (not (and ep-pdf-file ep-pdf-dir (equal (current-buffer) ep-main-buffer)))
+		(browse-url url)
 
-(defun ep-add-pdf (filename)
+	      ; Download pdf in background using 'deffered.el'
+	      (if (fboundp 'deferred:$)
+		  (lexical-let ((filename filename)
+				(entry entry)
+				(url url))
+		    (message "Fetching %s asynchronously" (or key ""))
+		    (deferred:$ 
+		      (deferred:$ 
+			(deferred:process-shell (ep-ep-url-curl-cmd url filename 20))
+			(deferred:nextc it
+			  (lambda ()
+			    (deferred:$
+			      (ep-ep-open-pdf filename)
+			      (ep-add-pdf filename entry)))))
+		      (deferred:error it
+			(lambda (err) 
+			  (message "Failed to retrieve file from \"%s\"." url)))))
+
+		(message "Fetching %s" (or key ""))
+		(if (not (ep-ep-url-retrieve-file url filename))
+		    (message "Failed to retrieve file from \"%s\"." url)
+		  (ep-ep-open-pdf filename)
+		  (ep-add-pdf filename)))))
+      
+	(message "There is no preprint number for this entry. Trying using DOI. You need to manually save the PDF.")
+	(ep-goto-doi)))))
+
+(defun ep-add-pdf (filename &optional entry)
   (interactive
    (list (read-file-name "PDF file: " ep-pdf-dir nil t)))
-  (let* ((entry ep-ep-current-entry)
+  (let* ((entry (or entry ep-ep-current-entry))
          (key (ep-ep-alist-get-value "=key=" entry))
          (pdfname (file-relative-name filename ep-pdf-dir)))
     (if (not key)
