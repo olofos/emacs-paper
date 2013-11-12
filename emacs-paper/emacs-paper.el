@@ -16,90 +16,127 @@
 ;; along with this program; see the file COPYING.  If not, see 
 ;; <http://www.gnu.org/licenses/>.
 
+
 ;;; Set up variables
-(defcustom ep-main-bib-file ""
+
+
+(defcustom ep-main-bib-file nil
   "Main BibTeX database used by Emacs Paper."
-  :type 'string)
+  :type '(choice (const :tag "None" nil)
+                 (file :tag "Filename"))
+  :group 'emacs-paper)
+
+(defcustom ep-temp-dir "/tmp/"
+  "Directory for storing temporary files."
+  :type 'directory
+  :group 'emacs-paper)
 
 (defcustom ep-pdf-dir nil
   "Directory for storing PDF-files."
-  :type '(restricted-sexp :match-alternatives (stringp 'nil)))
-
-(defcustom ep-temp-dir "/tmp/"
-  "Directory for storing temporary files.")
+  :type '(choice (const :tag "None" nil)
+                 (directory :tag "Directory"))
+  :group 'emacs-paper)
 
 (defcustom ep-pdf-file nil
   "File for storing the list of PDF-files."
-  :type '(restricted-sexp :match-alternatives (stringp 'nil)))
+  :type '(choice (const :tag "None" nil)
+                 (file :tag "Filename"))
+  :group 'emacs-paper)
 
 (defcustom ep-add-pdf-to-itunes-script nil
   "Path to AppleScript to add papers to iTunes."
-  :type '(restricted-sexp :match-alternatives (stringp 'nil)))
+  :type '(choice (const :tag "None" nil)
+                 (file :tag "Filename"))
+  :group 'emacs-paper)
 
 (defcustom ep-add-pdf-to-itunes-automatically nil
   "Automatically add PDF files to iTunes"
-  :type 'boolean)
+  :type 'boolean
+  :group 'emacs-paper)
 
-(defvar ep-fix-titles 't
-  "*Should titles be 'fixed'?")
+(defcustom ep-fix-title-regexps nil
+  "List of regexps and replacement strings to clean up titles"
+  :type '(repeat (cons (regexp :tag "Regexp     ") (string :tag "Replacement")))
+  :group 'emacs-paper)
+
+(defcustom ep-fix-titles 't
+  "Should titles be 'fixed'?"
+  :type 'boolean
+  :group 'emacs-paper)
 
 (defcustom ep-arxiv-default-category "hep-th"
   "Default arXiv category to use when checking for new articles."
-  :type 'string)
+  :type 'string
+  :group 'emacs-paper)
 
 (defcustom ep-highlight-color "honeydew1"
   "Background color of highlighted entry."
-  :type 'color)
+  :type 'color
+  :group 'emacs-paper)
 
-(defcustom ep-inspire-url 
-  "http://inspirehep.net/search?p="
+(defcustom ep-inspire-url "http://inspirehep.net/search?p="
   "Base URL used for Inspire queries."
-  :type 'string)
+  :type 'string
+  :group 'emacs-paper)
 
 (defcustom ep-arxiv-url "http://arxiv.org"
   "Base URL for visiting the arXiv."
-  :type 'string)
+  :type 'string
+  :group 'emacs-paper)
 
 (defcustom ep-arxiv-api-url "http://export.arxiv.org/api/query"
   "Base URL for arXiv API."
-  :type 'string)
+  :type 'string
+  :group 'emacs-paper)
 
 (defcustom ep-arxiv-rss-url "http://export.arxiv.org/rss/"
   "Base URL for arXiv RSS."
-  :type 'string)
+  :type 'string
+  :group 'emacs-paper)
 
 (defcustom ep-message-cmd nil
-  "Command called to send messages.")
+  "Command called to send messages."
+  :type '(choice (const :tag "None" nil)
+                 (string :tag "Command"))
+  :group 'emacs-paper)
 
 (defcustom ep-open-pdf-cmd "open \"%s\""
   "Command to call for opening PDF files.
 The final command will be formated using 'format' and should
 include a single '%s' which will be substituted with the
 filename."
-  :type 'string)
+  :type 'string
+  :group 'emacs-paper)
 
 (defcustom ep-enable-save-hook t
   "Search for visiting Emacs Paper buffers when saving a BibTeX file."
-  :type 'boolean)
-
-(defvar ep-main-buffer nil
-  "Main Emacs Paper buffer")
+  :type 'boolean
+  :group 'emacs-paper)
 
 (defcustom ep-bib-fields
   '("author" "title" "journal" "volume" "number" "publisher" "year" "month" 
     "edition" "address" "pages" "eprint" "archivePrefix" "primaryClass"
-    "doi" "school" "series" "SLACcitation" "note" "crossref""ep-tags")
+    "doi" "school" "series" "SLACcitation" "note" "crossref" "ep-tags")
   "BibTeX fields saved by Emacs Paper. The fields are inserted in
-  the order of appearance in the list.")
+  the order of appearance in the list."
+  :type '(repeat string)
+  :group 'emacs-paper)
 
 (defcustom ep-inspire-update-bib-fields
   '("journal" "volume" "number" "publisher" "year" "month" 
     "edition" "address" "pages" "doi" "series" "note" "ep-tags")
-  "BibTeX fields allowed to be silently updated by `ep-inspire-update-entry'.")
+  "BibTeX fields allowed to be silently updated by `ep-inspire-update-entry'."
+  :type '(repeat string)
+  :group 'emacs-paper)
 
-(defvar ep-ep-common-tags '("Printed" "TODO: Print")
+(defcustom ep-common-tags nil
   "List of common Emacs Paper tags, used for completion when
-  adding a tag to an entry.")
+  adding a tag to an entry."
+  :type '(repeat (string :tag "Tag"))
+  :group 'emacs-paper)
+
+(defvar ep-ep-main-buffer nil
+  "Main Emacs Paper buffer")
 
 (defvar ep-ep-highlight-overlay nil
   "Overlay used to highlight the current entry.")
@@ -114,7 +151,7 @@ filename."
 (defvar ep-ep-file-buffers nil
   "List of all Emacs Paper buffer visiting files.")
 
-(defvar ep-pdf-list '(nil)
+(defvar ep-ep-pdf-list '(nil)
   "Mapping between BibTeX keys and PDF files.")
 
 ;;; General helper functions 
@@ -137,8 +174,8 @@ filename."
 (defun ep-ep-string-match-full (regexp string)
   "Check if 'string' exactly matches 'regexp'"
   (and (string-match regexp string)
-	   (equal (match-beginning 0) 0)
-	   (equal (match-end 0) (length string))))
+       (equal (match-beginning 0) 0)
+       (equal (match-end 0) (length string))))
 
 (defmacro ep-ep-alist-insert (key alist val)
   "Insert (KEY . VAL) into alist, unless there already is an
@@ -160,9 +197,9 @@ WARNING: evaluates the parameters more than once! Fix this!"
   `(let* ((local-key ,key)
           (local-val ,val)
           (local-field (assoc local-key ,alist)))
-    (if local-field
+     (if local-field
          (setcdr local-field local-val)
-      (ep-ep-alist-insert local-key ,alist local-val))))
+       (ep-ep-alist-insert local-key ,alist local-val))))
 
 (defun ep-ep-alist-get-value (key alist)
   "Get the value of KEY in ALIST."
@@ -177,14 +214,14 @@ WARNING: evaluates the parameters more than once! Fix this!"
   "Replaces any string matching 'regexp' with 'string'"
   (goto-char (point-min))
   (let ((case-fold-search nil))
-	(while (re-search-forward regexp nil t) 
-	  (replace-match string t nil))))
+    (while (re-search-forward regexp nil t) 
+      (replace-match string t nil))))
 
 (defun ep-ep-string-match-full (regexp string)
   "Check if 'string' exactly matches 'regexp'"
   (and (string-match regexp string)
-	   (equal (match-beginning 0) 0)
-	   (equal (match-end 0) (length string))))
+       (equal (match-beginning 0) 0)
+       (equal (match-end 0) (length string))))
 
 
 (defun ep-ep-pop-from-file-name-history (filename)
@@ -209,7 +246,7 @@ WARNING: evaluates the parameters more than once! Fix this!"
     (if (not entries)
         (message "No BibTeX entries found in %s" file)
 
-    ;; Sort the entries so that 'Preamble' and 'String' entries are at the top
+      ;; Sort the entries so that 'Preamble' and 'String' entries are at the top
       (setq entries (funcall (ep-ep-sort-function "==unused==") entries))
 
       (ep-ep-new-buffer (concat "EP:" (file-name-nondirectory file))
@@ -294,7 +331,7 @@ from `save-buffers-kill-terminal'."
           (setq all-saved nil))))
     (if all-saved
         t
-    (yes-or-no-p "Modified Emacs Paper buffer exist; exit anyway?"))))
+      (yes-or-no-p "Modified Emacs Paper buffer exist; exit anyway?"))))
 
 (defun ep-bib-parse-buffer (buffer)
   "Parse all BibTeX entries in BUFFER. Return a list of the
@@ -334,7 +371,7 @@ parsed entries."
               (ep-ep-alist-insert "=content=" entry (concat key " = " string))
               (goto-char entry-end)
               (push entry entries)
-            ))
+              ))
            (t
             (let* ((entry (bibtex-parse-entry t)))
               (dolist (field entry)
@@ -369,13 +406,13 @@ The file is not saved."
       (erase-buffer)
       (insert "This file was created by Emacs Paper.\n\n")
       (let ((progress (make-progress-reporter "Insering entries..." 0 (length entries)))
-	    (counter 0))
-	(dolist (entry entries)
-	  (ep-bib-format-entry entry)
+            (counter 0))
+        (dolist (entry entries)
+          (ep-bib-format-entry entry)
           (incf counter)
-	  (progress-reporter-update progress counter)
-	  (insert "\n\n"))
-	(progress-reporter-done progress))
+          (progress-reporter-update progress counter)
+          (insert "\n\n"))
+        (progress-reporter-done progress))
       (setq did-write t))
     did-write))
 
@@ -420,10 +457,10 @@ The file is not saved."
             ep-buffer)
 
         ;; Is it the main Emacs Paper buffer that is being changed?
-        (if (string-equal saved-file-name (expand-file-name ep-main-bib-file))
+        (if (string-equal saved-file-name (expand-file-name (or ep-main-bib-file ep-main-bib-file "")))
             (when (y-or-n-p (concat "Main Emacs Paper BibTeX database changed. Reload Emacs Paper main buffer (this will close " saved-file-name ")? "))
               ;; Close and reopen the main buffer
-              (kill-buffer ep-main-buffer)
+              (kill-buffer ep-ep-main-buffer)
               (ep-main))
 
           ;; Search for Emacs Papers visiting the newly saved file. Note that we actually only find the LAST buffer visiting the file...
@@ -465,7 +502,7 @@ nil. Return t if anything was inserted, otherwise nil."
   "Act as concat, but return nil if any of the arguments are nil."
   `(if (member nil (list ,@args))
        nil
-      (concat ,@args)))
+     (concat ,@args)))
 
 (defmacro ep-ep-substring-non-nil (string from &optional to)
   "Act as `substring', but return nil if STRING is nil"
@@ -500,7 +537,7 @@ nil. Return t if anything was inserted, otherwise nil."
        ((ep-ep-field-value "=ep-cross-list=" entry)
         (insert " (cross-list)")))
 
-      (when (and (ep-ep-field-value "=key=" entry) ep-pdf-list (ep-ep-alist-get-value (ep-ep-field-value "=key=" entry) ep-pdf-list))
+      (when (and (ep-ep-field-value "=key=" entry) ep-ep-pdf-list (ep-ep-alist-get-value (ep-ep-field-value "=key=" entry) ep-ep-pdf-list))
         (insert " (PDF)"))
 
       (insert "\n")
@@ -514,7 +551,7 @@ nil. Return t if anything was inserted, otherwise nil."
                 (ep-ep-field-value "journal" entry)
                 (and (ep-ep-field-value "=key=" entry) (ep-ep-field-value "eprint" entry)))
         (insert "\n"))
-    
+      
       ;; (if (string-equal "JHEP" (ep-ep-field-value "journal" entry))
       ;;     (ep-ep-insert-non-nil (ep-ep-propertize-non-nil 
       ;;                            (ep-ep-field-value "journal" entry) 'face 'italic ) " " 
@@ -552,8 +589,8 @@ nil. Return t if anything was inserted, otherwise nil."
         (insert (ep-ep-field-value "abstract" entry)))
       
       (ep-ep-insert-non-nil "Note: " (ep-ep-field-value "note" entry) "\n")))
-     
-     (put-text-property start (point) :ep-entry entry)))
+    
+    (put-text-property start (point) :ep-entry entry)))
 
 (defun ep-ep-format-entries (entries)
   "Insert ENTRIES in current buffer."
@@ -625,13 +662,13 @@ leave `point' unchanged and return nil."
      ((and prev (ep-ep-entry-at-point prev) (not (eq (ep-ep-entry-at-point prev) (ep-ep-entry-at-point))))
       (goto-char prev)
       (point))
-    ((and prev-to-prev (ep-ep-entry-at-point prev-to-prev))
-     (goto-char prev-to-prev)
-     (point))
-    ((and prev-to-prev-to-prev (ep-ep-entry-at-point prev-to-prev-to-prev))
-     (goto-char prev-to-prev-to-prev)
-     (point))
-    (t nil))))
+     ((and prev-to-prev (ep-ep-entry-at-point prev-to-prev))
+      (goto-char prev-to-prev)
+      (point))
+     ((and prev-to-prev-to-prev (ep-ep-entry-at-point prev-to-prev-to-prev))
+      (goto-char prev-to-prev-to-prev)
+      (point))
+     (t nil))))
 
 (defun ep-next-entry-recenter (&optional n)
   "Move point to the beginning of the next entry. If the current
@@ -649,7 +686,7 @@ non-nil argument, skip N entries forwards."
         (unless (and (pos-visible-in-window-p start) (pos-visible-in-window-p end))
           (let* ((start-line (line-number-at-pos start))
                  (end-line (line-number-at-pos end))
-               (center-line (/ (window-height) 2)))
+                 (center-line (/ (window-height) 2)))
             (recenter (max 0 (- center-line (/ (- end-line start-line) 2))))))))))
 
 (defun ep-previous-entry-recenter (&optional n)
@@ -805,23 +842,23 @@ REGEXP."
 (defun ep-entries-with-tag (&optional tag)
   "Create a new Emacs Paper buffer showing all entries tagged
 with TAG."
-    (interactive "i")
+  (interactive "i")
 
-    (let ((tag (or tag
-                   (completing-read "Tag or regexp: " ep-ep-common-tags))))
+  (let ((tag (or tag
+                 (completing-read "Tag or regexp: " ep-common-tags))))
 
-      (let* ((buffer-name (buffer-name))
-             (entries (ep-ep-filter-entries (ep-ep-extract-entries) 
-                                            (list (cons "ep-tags" tag)))))
-        (ep-ep-new-buffer (concat (buffer-name) ":" tag)
-          (ep-ep-insert-main-heading (concat "Entries in '" buffer-name "' with tags matching '" tag "'"))
-          (ep-ep-format-entries entries)))))
+    (let* ((buffer-name (buffer-name))
+           (entries (ep-ep-filter-entries (ep-ep-extract-entries) 
+                                          (list (cons "ep-tags" tag)))))
+      (ep-ep-new-buffer (concat (buffer-name) ":" tag)
+        (ep-ep-insert-main-heading (concat "Entries in '" buffer-name "' with tags matching '" tag "'"))
+        (ep-ep-format-entries entries)))))
 
 (defun ep-ep-goto-entry (entry)
   "Move POINT to start of ENTRY."
   (let ((boundaries (ep-ep-entry-boundaries entry)))
     (when boundaries
-        (goto-char (car boundaries)))))
+      (goto-char (car boundaries)))))
 
 (defun ep-ep-entry-boundaries (entry)
   "Return the start and end point of ENTRY in a cons cell
@@ -1068,7 +1105,7 @@ to the current entry."
          (tags-val (ep-ep-field-value "ep-tags" entry))
          (tags (and tags-val (split-string tags-val ",")))
          (completion-ignore-case t)
-         (tag (or tag (completing-read "Add tag: " ep-ep-common-tags nil nil)))
+         (tag (or tag (completing-read "Add tag: " ep-common-tags nil nil)))
          new-tags)
     (if (member tag tags)
         (message "Entry already tagged with '%s'" tag)
@@ -1090,18 +1127,18 @@ it. Default to the current entry."
     (if (not tags)
         (message "Entry has no tags")
       (setq tag (or tag (completing-read "Remove tag: " tags nil t)))
-    (cond
-     ((string-equal tag "")
-      (message "Abort"))
-     ((not (member tag tags))
+      (cond
+       ((string-equal tag "")
+        (message "Abort"))
+       ((not (member tag tags))
         (message "Entry is not tagged with '%s' (How could this happen?)" tag))
-     (t
-      (setq new-tags (mapconcat 'identity (delete tag tags) ","))
-      (when (string-equal "" new-tags)
-        (setq new-tags nil))
-      (ep-ep-register-undo-edit-entry entry)
-      (ep-ep-alist-set "ep-tags" entry new-tags)
-      (ep-ep-update-entry entry))))))
+       (t
+        (setq new-tags (mapconcat 'identity (delete tag tags) ","))
+        (when (string-equal "" new-tags)
+          (setq new-tags nil))
+        (ep-ep-register-undo-edit-entry entry)
+        (ep-ep-alist-set "ep-tags" entry new-tags)
+        (ep-ep-update-entry entry))))))
 
 
 (defun ep-mark-entry (&optional entry mark)
@@ -1180,7 +1217,7 @@ MARK is 'unmark, unmark ENTRY."
   (interactive)
   
   (let ((entry (or entry ep-ep-current-entry))
-        (buffer (or buffer ep-main-buffer)))
+        (buffer (or buffer ep-ep-main-buffer)))
     (cond 
      ((not entry) (error "No entries to save"))
      ((not buffer) (error "Main buffer is not loaded"))
@@ -1224,9 +1261,9 @@ MARK is 'unmark, unmark ENTRY."
   "Kill the current entry."
   (interactive)
   (when ep-ep-current-entry)
-    (ep-ep-register-undo-delete-entry ep-ep-current-entry)
-    (ep-copy-entry)
-    (ep-ep-delete-entry ep-ep-current-entry))
+  (ep-ep-register-undo-delete-entry ep-ep-current-entry)
+  (ep-copy-entry)
+  (ep-ep-delete-entry ep-ep-current-entry))
 
 (defun ep-ep-delete-entry (entry)
   "Delete 'entry'."
@@ -1236,12 +1273,12 @@ MARK is 'unmark, unmark ENTRY."
     (toggle-read-only -1)
     (delete-region entry-start entry-end)
     (toggle-read-only 1)))
-         
+
 (defun ep-import-marked-entries ()
   "Import all marked entries to the main Emacs Paper buffer."
   (interactive)
   (let ((marked-entries (ep-ep-extract-marked-entries))
-        (buffer ep-main-buffer)
+        (buffer ep-ep-main-buffer)
         (saved 0))
     (if (not buffer)
         (error "Main Emacs paper buffer not loaded!")
@@ -1286,7 +1323,7 @@ MARK is 'unmark, unmark ENTRY."
       (message "There is no preprint number for this entry. Trying using DOI.")
       (ep-goto-doi))))
 
- 
+
 (defun ep-goto-doi (&optional arg)
   "Follow the DOI of the current entry."
   (interactive "P")
@@ -1303,23 +1340,23 @@ kill ring. Default to the current entry."
   (save-excursion
     (let ((query (ep-ep-inspire-entry-query entry)))
       (when query
-          (let ((res-buf (ep-ep-url-retrieve-synchronously (ep-ep-inspire-url query "hlxu"))))
-            (set-buffer res-buf)
-            (goto-char 0)
-            (let* ((start (progn (goto-char (point-min))
-                                 (search-forward "<pre>" nil 't) 
-                                 (point)))
-                   (end (progn (goto-char (point-max))
-                               (search-backward "</pre>" nil 't) 
-                               (point))))
-              (if (not (< start end))
-                  (message "No Inspire LaTeX entry found!")
-                (narrow-to-region start end)
-                (ep-ep-replace-regexp "&nbsp;" "")
-                (ep-ep-replace-regexp "<br>" "\n")
-                (copy-region-as-kill (point-min) (point-max))
-                (message "LaTeX entry copied to killed ring")))
-            (kill-buffer res-buf))))))
+        (let ((res-buf (ep-ep-url-retrieve-synchronously (ep-ep-inspire-url query "hlxu"))))
+          (set-buffer res-buf)
+          (goto-char 0)
+          (let* ((start (progn (goto-char (point-min))
+                               (search-forward "<pre>" nil 't) 
+                               (point)))
+                 (end (progn (goto-char (point-max))
+                             (search-backward "</pre>" nil 't) 
+                             (point))))
+            (if (not (< start end))
+                (message "No Inspire LaTeX entry found!")
+              (narrow-to-region start end)
+              (ep-ep-replace-regexp "&nbsp;" "")
+              (ep-ep-replace-regexp "<br>" "\n")
+              (copy-region-as-kill (point-min) (point-max))
+              (message "LaTeX entry copied to killed ring")))
+          (kill-buffer res-buf))))))
 
 
 ;;; Connect to the arXiv 
@@ -1352,7 +1389,7 @@ kill ring. Default to the current entry."
 
             (dolist (author-node (xml-get-children entry 'author))
               (push (caddar (xml-get-children author-node 'name))
-                                        author-list))
+                    author-list))
             (setq author-list (nreverse author-list))
 
             (while author-list
@@ -1458,34 +1495,34 @@ arXiv."
          (modified nil))
     (message (concat "Looking up " eprint " on the arXiv"))
     (let ((arxiv-entry (when eprint (car (ep-ep-arxiv-id-query (list eprint))))))
-    (cond 
-     ((not eprint) (message "%s" "The current entry has no preprint number"))
-     (t
-      (ep-ep-register-undo-edit-entry entry)
-      (dolist (field arxiv-entry)
-        (let ((field-name (car field))
-              (field-val (cdr field)))
-          (when (and (member field-name ep-bib-fields)
-                     (or (and (not overwrite) 
-                              (not (ep-ep-alist-get-value field-name entry)))
-                         (and overwrite
-                              (not (string-equal field-val (ep-ep-alist-get-value field-name entry))))))
-            (setq modified t))
-          (if (not overwrite)
-              (ep-ep-alist-insert field-name entry field-val)
-            (ep-ep-alist-set field-name entry field-val))))
-      (with-silent-modifications
-        (ep-ep-update-entry entry))
-      (when modified
-        (set-buffer-modified-p t))
-      (message "Entry updated"))))))
+      (cond 
+       ((not eprint) (message "%s" "The current entry has no preprint number"))
+       (t
+        (ep-ep-register-undo-edit-entry entry)
+        (dolist (field arxiv-entry)
+          (let ((field-name (car field))
+                (field-val (cdr field)))
+            (when (and (member field-name ep-bib-fields)
+                       (or (and (not overwrite) 
+                                (not (ep-ep-alist-get-value field-name entry)))
+                           (and overwrite
+                                (not (string-equal field-val (ep-ep-alist-get-value field-name entry))))))
+              (setq modified t))
+            (if (not overwrite)
+                (ep-ep-alist-insert field-name entry field-val)
+              (ep-ep-alist-set field-name entry field-val))))
+        (with-silent-modifications
+          (ep-ep-update-entry entry))
+        (when modified
+          (set-buffer-modified-p t))
+        (message "Entry updated"))))))
 
 (defun ep-check-arxiv (category) 
   "Show new entries at the arXiv for CATEGORY."
   (interactive
    (list (read-string (concat "arXiv category [" ep-arxiv-default-category "]: ") 
                       nil nil ep-arxiv-default-category)))
-                            
+  
   (let* ((ids (ep-ep-arxiv-get-new-ids category))
          (entries-new (nreverse (ep-ep-arxiv-id-query (car ids))))
          (entries-cross-listed (nreverse (ep-ep-arxiv-id-query (cadr ids))))
@@ -1514,9 +1551,9 @@ arXiv."
         (ep-ep-insert-sub-heading  "Updated entries")
         (ep-ep-format-entries entries-updated)
         (ep-ep-message "Showing %d new entries, %d cross-listed entries and %d updated entries."
-                 (length entries-new)
-                 (length entries-cross-listed)
-                 (length entries-updated))))))
+                       (length entries-new)
+                       (length entries-cross-listed)
+                       (length entries-updated))))))
 
 
 (defun ep-arxiv-catch-up (category days)
@@ -1550,20 +1587,20 @@ from the last DAYS days."
 
 (defun ep-ep-inspire-guess-query (key)
   "Guess the Inspire query to find KEY."
-   (cond ((string-match "FIND " key)
-          (replace-regexp-in-string " " "+" key))
-         ((string-match " " key)
-          (concat "FIND+" (replace-regexp-in-string " " "+" key)))
-         ((ep-ep-string-match-full "[0-9]\\{4\\}\\.[0-9]\\{4\\}" key) 
-          (concat "FIND+EPRINT+ARXIV:" key))        ; Match new arxiv identifier
-         ((ep-ep-string-match-full "[0-9]\\{7\\}" key) 
-          (concat "FIND+EPRINT+" ep-arxiv-default-category "/" key)) ; Match old arxiv identifier
-         ((ep-ep-string-match-full "[a-z\\-]+/[0-9]\\{7\\}" key) 
-          (concat "FIND+EPRINT+" key))        ; Match old arxiv identifier
-         ((ep-ep-string-match-full "[A-Za-z']*:[0-9]\\{4\\}[a-z]\\{2\\}[a-z]?" key) 
-          (concat "FIND+TEXKEY+" key))        ; Match Inspire key
-         (t
-          (concat "FIND+A+" key))))           ; Default to author search
+  (cond ((string-match "FIND " key)
+         (replace-regexp-in-string " " "+" key))
+        ((string-match " " key)
+         (concat "FIND+" (replace-regexp-in-string " " "+" key)))
+        ((ep-ep-string-match-full "[0-9]\\{4\\}\\.[0-9]\\{4\\}" key) 
+         (concat "FIND+EPRINT+ARXIV:" key))        ; Match new arxiv identifier
+        ((ep-ep-string-match-full "[0-9]\\{7\\}" key) 
+         (concat "FIND+EPRINT+" ep-arxiv-default-category "/" key)) ; Match old arxiv identifier
+        ((ep-ep-string-match-full "[a-z\\-]+/[0-9]\\{7\\}" key) 
+         (concat "FIND+EPRINT+" key))        ; Match old arxiv identifier
+        ((ep-ep-string-match-full "[A-Za-z']*:[0-9]\\{4\\}[a-z]\\{2\\}[a-z]?" key) 
+         (concat "FIND+TEXKEY+" key))        ; Match Inspire key
+        (t
+         (concat "FIND+A+" key))))           ; Default to author search
 
 (defun ep-ep-inspire-entry-query (&optional entry)
   "Return a query to find the Inspire record for ENTRY.
@@ -1572,13 +1609,13 @@ Default to the current entry"
          (key-query (ep-ep-concat-non-nil "TEXKEY+\"" (ep-ep-alist-get-value "=key=" entry) "\""))
          (eprint-query (ep-ep-concat-non-nil "EPRINT+" (ep-ep-alist-get-value "eprint" entry))))
     (ep-ep-concat-non-nil "FIND+"
-     (cond 
-      ((and key-query eprint-query)
-       (concat key-query "+OR+" eprint-query))
-      (key-query
-        key-query)
-      (eprint-query
-        eprint-query)))))
+                          (cond 
+                           ((and key-query eprint-query)
+                            (concat key-query "+OR+" eprint-query))
+                           (key-query
+                            key-query)
+                           (eprint-query
+                            eprint-query)))))
 
 (defun ep-ep-inspire-extract-entries (query-buf)
   "Extract entries from a buffer resulting from a Inspire query
@@ -1602,9 +1639,9 @@ entries are extracted."
       (kill-buffer query-buf)
 
       (dolist (entry entries)
-	(when ep-fix-titles
-	  (ep-ep-fix-title entry))
-	(ep-ep-fix-note entry))
+        (when ep-fix-titles
+          (ep-ep-fix-title entry))
+        (ep-ep-fix-note entry))
 
       entries)))
 
@@ -1682,12 +1719,12 @@ non-nil, replace any exisitng fields."
   (let* ((inspire-query (ep-ep-inspire-guess-query query))
          (url (ep-ep-inspire-url inspire-query)))
     (ep-ep-new-buffer (concat "EP search results: " query)
-       (ep-ep-insert-main-heading (concat "Search results for '" query "'"))
-       (ep-ep-insert-sub-heading "Local results")
-       (let* ((ep-query (ep-ep-search-parse-query inspire-query))
-              (entries (ep-ep-filter-entries (ep-ep-extract-entries ep-main-buffer) ep-query)))
-         (ep-ep-format-entries entries))
-       (ep-ep-insert-sub-heading "Inpire results"))
+      (ep-ep-insert-main-heading (concat "Search results for '" query "'"))
+      (ep-ep-insert-sub-heading "Local results")
+      (let* ((ep-query (ep-ep-search-parse-query inspire-query))
+             (entries (ep-ep-filter-entries (ep-ep-extract-entries ep-ep-main-buffer) ep-query)))
+        (ep-ep-format-entries entries))
+      (ep-ep-insert-sub-heading "Inpire results"))
     (message (concat "Looking up '" inspire-query "' at Inpire"))
     (url-retrieve url 'ep-ep-inspire-query-callback (list (current-buffer)))))
 
@@ -1737,48 +1774,12 @@ cons-cells (BibTeX-field . regexp)."
   (when ep-fix-titles
     (with-temp-buffer
       (insert (ep-ep-alist-get-value "title" entry))
-    
+      
       (let* ((pre-replacements
-             '(("\n" . " ")  ; Remove any newlines
-               (" +" . " ")  ; Only single spaces
-  
-               ("^{" . "")   ; Remove start brace
-               ("}$" . ""))) ; Remove end brace
+              '(("\n" . " ")  ; Remove any newlines
+                (" +" . " ")))  ; Only single spaces
 
-            (replacements
-             '(("AdS(5) *[x\\*] *S(5)" . "{$\\\\AdS_5 \\\\times \\\\Sphere^5$}")
-               ("AdS(5) *[x\\*] *S\\*\\*5" . "{$\\\\AdS_5 \\\\times \\\\Sphere^5$}")
-               ("AdS_?5 *[x\\*] *S^?5" . "{$\\\\AdS_5 \\\\times \\\\Sphere^5$}")
-               ("AdS_?4 *[x\\*] *CP[_^]?3" . "{$\\\\AdS_4 \\\\times \\\\CP^3$}")
-               ("AdS_?4 */ *CFT_?3" . "{$\\\\AdS_4/\\\\CFT_3$}")
-               ("AdS(3) */ *CFT(2)" . "{$\\\\AdS_3/\\\\CFT_2$}")
-               (" +N *= *4" . " {$\\\\superN = 4$}")
-               (" +N *= *6" . " {$\\\\superN = 6$}")
-               ("^N *= *4" . "{$\\\\superN = 4$}")
-               ("^N *= *6" . "{$\\\\superN = 6$}")
-               ("Yang" . "{Y}ang")
-               ("Bethe" . "{B}ethe")
-               ("Mill" . "{M}ill")
-               ("Chern" . "{C}hern")
-               ("Simons" . "{S}imons")
-               ("Hirota" . "{H}irota")
-               ("Baxter" . "{B}axter")
-               ("Sitter" . "{S}itter")
-               ("Wilson" . "{W}ilson")
-               ("AdS */ *CFT" . "{A}d{S/CFT}")
-               ("SU(2) *x *SU(2)" . "{$\\\\grSU(2) \\\\times \\\\grSU(2)$}")
-               ("CP^3\\([^$]\\)" . "{$\\\\CP^3$}\\1")
-
-               ("\\([^\\]\\)AdS" . "\\1{A}d{S}")
-
-               ("^\\([A-Z0-9]+\\)-" . "{\\1}-")
-               (" \\([A-Z0-9]+\\)-" . " {\\1}-")
-
-               ("^\\([A-Z0-9]+\\) " . "{\\1} ")
-               (" \\([A-Z0-9]+\\) " . " {\\1} ")
-               (" \\([A-Z0-9]+\\)$" . " {\\1}")
-
-               ("{\\([A-Z]\\)} " . "\\1 "))))
+             (replacements ep-fix-title-regexps))
 
         (dolist (repl pre-replacements)
           (ep-ep-replace-regexp (car repl) (cdr repl)))
@@ -1804,20 +1805,22 @@ cons-cells (BibTeX-field . regexp)."
 ;;  Main buffer
 
 (defun ep-ep-main-start ()
-  (when ep-pdf-file
-    (ep-ep-pdf-read-file ep-pdf-file))
-  (setq ep-main-buffer (ep-bib-load-file ep-main-bib-file)))
+  (if (not ep-main-bib-file)
+      (message "No main Emacs Paper file defined. Please define `ep-main-bib-file`")
+    (when ep-pdf-file
+      (ep-ep-pdf-read-file ep-pdf-file))
+    (setq ep-ep-main-buffer (ep-bib-load-file ep-main-bib-file))))
 
 (defun ep-main ()
   "Load the main Emacs Paper buffer."
   (interactive)
   (cond 
-   ((not (buffer-live-p ep-main-buffer)) (ep-ep-main-start))
+   ((not (buffer-live-p ep-ep-main-buffer)) (ep-ep-main-start))
    ((and (y-or-n-p "Emacs Paper main buffer is already open. Reread the main BibTeX file (this will kill the buffer)? ")
-         (kill-buffer ep-main-buffer))
+         (kill-buffer ep-ep-main-buffer))
     (ep-ep-main-start))
-   (t (switch-to-buffer ep-main-buffer))))
-  
+   (t (switch-to-buffer ep-ep-main-buffer))))
+
 (defun ep-quit ()
   "Close the buffer."
   (interactive)
@@ -1825,8 +1828,8 @@ cons-cells (BibTeX-field . regexp)."
   (let ((buffer (current-buffer)))
     (when (kill-buffer buffer)
       (message "Closing Emacs Paper buffer")
-      (when (eq buffer ep-main-buffer)
-        (setq ep-main-buffer nil)))))
+      (when (eq buffer ep-ep-main-buffer)
+        (setq ep-ep-main-buffer nil)))))
 
 
 ;; Handling PDF files
@@ -1844,14 +1847,14 @@ cons-cells (BibTeX-field . regexp)."
 (defun ep-ep-url-curl-cmd (url filename &optional timeout)
   "Construct 'curl' command line to save `url` to `filename`"
   (let ((quote (if (equal system-type 'windows-nt) "\"" "'"))
-	(url (replace-regexp-in-string "\"" "%22" (replace-regexp-in-string "'" "%27" url)))
-	(timeout (or (if (numberp timeout) (number-to-string timeout) timeout)
-		     "10")))
+        (url (replace-regexp-in-string "\"" "%22" (replace-regexp-in-string "'" "%27" url)))
+        (timeout (or (if (numberp timeout) (number-to-string timeout) timeout)
+                     "10")))
     (concat "curl " quote url quote " -L -s -S -f -m" timeout " --create-dirs -o " quote filename quote)))
 
 (defun ep-ep-url-retrieve-file (url filename)
   (let ((cmd (ep-ep-url-curl-cmd url filename))
-	status)
+        status)
     (setq status (shell-command cmd))
     (equal status 0)))
 
@@ -1864,12 +1867,12 @@ cons-cells (BibTeX-field . regexp)."
 
     (kill-buffer xml-buffer)
     
-    (setq ep-pdf-list nil)
+    (setq ep-ep-pdf-list nil)
 
     (dolist (paper (xml-get-children papers 'paper))
       (let ((key (caddar (xml-get-children paper 'key)))
             (pdf (caddar (xml-get-children paper 'pdf))))
-        (push (cons key pdf) ep-pdf-list)))))
+        (push (cons key pdf) ep-ep-pdf-list)))))
 
 (defun ep-ep-pdf-write-file (filename)
   (let ((xml-buffer (find-file-literally filename)))
@@ -1878,7 +1881,7 @@ cons-cells (BibTeX-field . regexp)."
 
     (insert "<?xml version=\"1.0\" encoding=\"utf-8\"?>\n")
     (insert "<papers>\n")
-    (dolist (paper ep-pdf-list)
+    (dolist (paper ep-ep-pdf-list)
       (when (car paper)
         (insert "  <paper>\n")
         (insert "    <key>")
@@ -1904,45 +1907,48 @@ cons-cells (BibTeX-field . regexp)."
   (let* ((entry ep-ep-current-entry)
          (key (ep-ep-alist-get-value "=key=" entry))
          (eprint (ep-ep-alist-get-value "eprint" entry))
-         (pdf (ep-ep-alist-get-value key ep-pdf-list)))
+         (pdf (ep-ep-alist-get-value key ep-ep-pdf-list)))
 
     (if (and pdf (not overwrite))
-	(ep-ep-open-pdf (concat ep-pdf-dir pdf))
+        (ep-ep-open-pdf (concat ep-pdf-dir pdf))
 
       (if eprint
-	  (let* ((url (ep-ep-concat-non-nil ep-arxiv-url "/pdf/" eprint ".pdf"))
-		 (pdfname (concat eprint ".pdf"))
+
+          (let* ((url (ep-ep-concat-non-nil ep-arxiv-url "/pdf/" eprint ".pdf"))
+                 (pdfname (concat eprint ".pdf"))
 		 (filename (expand-file-name (concat ep-pdf-dir pdfname))))
 
-	    (if (not (and ep-pdf-file ep-pdf-dir (equal (current-buffer) ep-main-buffer)))
-		(browse-url url)
+            (if (not (and ep-pdf-file ep-pdf-dir (equal (current-buffer) ep-ep-main-buffer)))
+                (browse-url url)
 
-	      ; Download pdf in background using 'deffered.el'
-	      (if (fboundp 'deferred:$)
-		  (lexical-let ((filename filename)
-				(entry entry)
-				(url url))
-		    (message "Fetching %s asynchronously" (or key ""))
-		    (deferred:$ 
-		      (deferred:$ 
-			(deferred:process-shell (ep-ep-url-curl-cmd url filename 20))
-			(deferred:nextc it
-			  (lambda ()
-			    (deferred:$
-			      (ep-ep-open-pdf filename)
-			      (ep-add-pdf filename entry)))))
-		      (deferred:error it
-			(lambda (err) 
-			  (message "Failed to retrieve file from \"%s\"." url)))))
+                                        ; Download pdf in background using 'deffered.el'
+              (if (fboundp 'deferred:$)
+                  (lexical-let ((filename filename)
+                                (entry entry)
+                                (url url))
+                    (message "Fetching %s asynchronously" (or key ""))
+                    (deferred:$ 
+                      (deferred:$ 
+                        (deferred:process-shell (ep-ep-url-curl-cmd url filename 20))
+                        (deferred:nextc it
+                          (lambda ()
+                            (deferred:$
+                              (ep-ep-open-pdf filename)
+                              (ep-add-pdf filename entry)))))
+                      (deferred:error it
+                        (lambda (err) 
+                          (message "Failed to retrieve file from \"%s\"." url)))))
 
-		(message "Fetching %s" (or key ""))
-		(if (not (ep-ep-url-retrieve-file url filename))
-		    (message "Failed to retrieve file from \"%s\"." url)
-		  (ep-ep-open-pdf filename)
-		  (ep-add-pdf filename)))))
-      
-	(message "There is no preprint number for this entry. Trying using DOI. You need to manually save the PDF.")
-	(ep-goto-doi)))))
+                                        ; If 'deferred.el' is not available, download pdf synchronously
+
+                (message "Fetching %s" (or key ""))
+                (if (not (ep-ep-url-retrieve-file url filename))
+                    (message "Failed to retrieve file from \"%s\"." url)
+                  (ep-ep-open-pdf filename)
+                  (ep-add-pdf filename)))))
+        
+        (message "There is no preprint number for this entry. Trying using DOI. You need to manually save the PDF.")
+        (ep-goto-doi)))))
 
 (defun ep-add-pdf (filename &optional entry)
   (interactive
@@ -1953,7 +1959,7 @@ cons-cells (BibTeX-field . regexp)."
     (if (not key)
         (message "Cannot save a PDF for a paper without key.")
       (with-silent-modifications
-        (ep-ep-alist-set key ep-pdf-list pdfname)
+        (ep-ep-alist-set key ep-ep-pdf-list pdfname)
         (ep-ep-pdf-write-file ep-pdf-file)
         (when ep-add-pdf-to-itunes-automatically
           (ep-add-pdf-to-itunes))
@@ -1962,7 +1968,7 @@ cons-cells (BibTeX-field . regexp)."
 (defun ep-add-pdf-to-itunes ()
   (interactive)
 
-  (when ep-pdf-list
+  (when ep-ep-pdf-list
     (if (not ep-add-pdf-to-itunes-script)
         (message "Cannot find AppleScript to add entries to iTunes")
       (let* ((entry ep-ep-current-entry)
@@ -1970,7 +1976,7 @@ cons-cells (BibTeX-field . regexp)."
              (title (ep-ep-alist-get-value "title" entry))
              (author (ep-ep-alist-get-value "author" entry))
              (year (ep-ep-alist-get-value "year" entry))
-             (filename (ep-ep-alist-get-value key ep-pdf-list))
+             (filename (ep-ep-alist-get-value key ep-ep-pdf-list))
              (cmd (concat "osascript \"" ep-add-pdf-to-itunes-script "\" \"" ep-pdf-dir filename "\" \"" title "\" \"" author "\" " key " \"" year "\"" )))
         (if (not filename)
             (message "Entry %s does not have any associated PDF." key)
@@ -2108,8 +2114,8 @@ cons-cells (BibTeX-field . regexp)."
     ;; Extract cited entries, plus string entries and the preamble
     (dolist (entry all-entries)
       (cond ((or (string-equal (ep-ep-alist-get-value "=type=" entry) "Preamble") 
-                (string-equal (ep-ep-alist-get-value "=type=" entry) "String"))
-                (push entry entries))
+                 (string-equal (ep-ep-alist-get-value "=type=" entry) "String"))
+             (push entry entries))
             ((member (ep-ep-alist-get-value "=key=" entry) keys)
              (push entry entries)
              (push (ep-ep-alist-get-value "=key=" entry) found-keys))))
