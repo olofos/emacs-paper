@@ -117,7 +117,7 @@ filename."
 (defcustom ep-bib-fields
   '("author" "title" "journal" "volume" "number" "publisher" "year" "month" 
     "edition" "address" "pages" "eprint" "archivePrefix" "primaryClass"
-    "doi" "school" "series" "SLACcitation" "note" "crossref" "ep-tags")
+    "doi" "school" "series" "SLACcitation" "note" "url" "crossref" "ep-tags")
   "BibTeX fields saved by Emacs Paper. The fields are inserted in
   the order of appearance in the list."
   :type '(repeat string)
@@ -589,7 +589,8 @@ nil. Return t if anything was inserted, otherwise nil."
         (insert "\n")
         (insert (ep-ep-field-value "abstract" entry)))
       
-      (ep-ep-insert-non-nil "Note: " (ep-ep-field-value "note" entry) "\n")))
+      (ep-ep-insert-non-nil "Note: " (ep-ep-field-value "note" entry) "\n")
+      (ep-ep-insert-non-nil "URL: " (ep-ep-field-value "url" entry) "\n")))
     
     (put-text-property start (point) :ep-entry entry)))
 
