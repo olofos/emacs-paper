@@ -17,6 +17,7 @@
 ;; <http://www.gnu.org/licenses/>.
 
 (require 'deferred)
+(require 'cl)
 
 ;;; Set up variables
 
@@ -1902,7 +1903,7 @@ cons-cells (BibTeX-field . regexp)."
     (kill-buffer xml-buffer)))
 
 (defun ep-ep-open-pdf (filename)
-  (shell-command (format ep-open-pdf-cmd (expand-file-name filename))))
+  (call-process-shell-command (format ep-open-pdf-cmd (expand-file-name filename)) nil 0 nil))
 
 (defun ep-goto-pdf (overwrite)
   (interactive "P")
@@ -1931,7 +1932,7 @@ cons-cells (BibTeX-field . regexp)."
                     (message "Fetching %s asynchronously" (or key ""))
                     (deferred:$ 
                       (deferred:$ 
-                        (deferred:process-shell (ep-ep-url-curl-cmd url filename 20))
+                        (deferred:process-shell (ep-ep-url-curl-cmd url filename 30))
                         (deferred:nextc it
                           (lambda ()
                             (deferred:$
