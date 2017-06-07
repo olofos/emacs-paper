@@ -567,6 +567,8 @@ nil. Return t if anything was inserted, otherwise nil."
                                                       (ep-ep-propertize-non-nil (ep-ep-field-value "volume" entry) 
                                                                                 'face 'bold) ", "
                                                                                 (ep-ep-field-value "pages" entry) " ")
+      (ep-ep-insert-non-nil (ep-ep-field-value "publisher" entry) " ")
+      
       (ep-ep-insert-non-nil "(" (ep-ep-field-value "year" entry) ")")
       
       (when (ep-ep-field-value "=key=" entry)
@@ -590,7 +592,7 @@ nil. Return t if anything was inserted, otherwise nil."
         (insert (ep-ep-field-value "abstract" entry)))
       
       (ep-ep-insert-non-nil "Note: " (ep-ep-field-value "note" entry) "\n")
-      (ep-ep-insert-non-nil "URL: " (ep-ep-field-value "url" entry) "\n")))
+      (ep-ep-insert-non-nil (ep-ep-field-value "url" entry) "\n")))
     
     (put-text-property start (point) :ep-entry entry)))
 
