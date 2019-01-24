@@ -212,6 +212,11 @@ WARNING: evaluates the parameters more than once! Fix this!"
   (dolist (field alist)
     (setcdr field nil)))
 
+(defmacro ep-ep-alist-remove (key alist)
+  "Remove element with key KEY from ALIST."
+  `(let* ((local-key ,key))
+     (setq ,alist (delq (assoc local-key ,alist) ,alist))))
+
 (defun ep-ep-replace-regexp (regexp string)
   "Replaces any string matching 'regexp' with 'string'"
   (goto-char (point-min))
@@ -1956,6 +1961,7 @@ cons-cells (BibTeX-field . regexp)."
         (ep-goto-doi)))))
 
 (defun ep-add-pdf (filename &optional entry)
+  "Associate a PDF file to ENTRY"
   (interactive
    (list (read-file-name "PDF file: " ep-pdf-dir nil t)))
   (let* ((entry (or entry ep-ep-current-entry))
@@ -1968,7 +1974,32 @@ cons-cells (BibTeX-field . regexp)."
         (ep-ep-pdf-write-file ep-pdf-file)
         (when ep-add-pdf-to-itunes-automatically
           (ep-add-pdf-to-itunes))
-        (ep-ep-update-entry entry)))))
+          (ep-ep-update-entry entry)))))
+
+(defun ep-delete-pdf (&optional entry)
+  "Delete PDF file associated to ENTRY.
+
+Really moves it to a \"trash\" subdirectory under `ep-pdf-dir'."
+  (interactive)
+  (let* ((entry (or entry ep-ep-current-entry))
+         (key (ep-ep-alist-get-value "=key=" entry)))
+    (if (not key)
+        (message "Paper does not have a key.")
+      (let* ((filename (ep-ep-alist-get-value key ep-ep-pdf-list)))
+        (if (not filename)
+            (message "Paper does not have a PDF")
+          (let* ((pdfname (concat ep-pdf-dir filename))
+                 (trashname (concat ep-pdf-dir "trash/" filename))
+                 (trashdir (file-name-directory trashname)))
+            (message "Deleting PDF of %s (%s)" key pdfname trashname)
+            (if (not (file-exists-p pdfname))
+                (message "File %s does not exist" pdfname)
+              (make-directory trashdir 't)
+              (rename-file pdfname trashname))
+            (ep-ep-alist-remove key ep-ep-pdf-list)
+            (ep-ep-pdf-write-file ep-pdf-file)
+            (with-silent-modifications
+              (ep-ep-update-entry entry))))))))
 
 (defun ep-add-pdf-to-itunes ()
   (interactive)
