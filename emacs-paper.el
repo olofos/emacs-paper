@@ -76,7 +76,7 @@
   :type 'color
   :group 'emacs-paper)
 
-(defcustom ep-inspire-url "http://inspirehep.net/search?p="
+(defcustom ep-inspire-url "http://old.inspirehep.net/search?p="
   "Base URL used for Inspire queries."
   :type 'string
   :group 'emacs-paper)
