@@ -680,6 +680,17 @@ leave `point' unchanged and return nil."
       (point))
      (t nil))))
 
+(defun ep-ep-recenter (&optional entry)
+  (let* ((entry (or entry (ep-ep-entry-at-point)))
+         (boundaries (ep-ep-entry-boundaries entry))
+         (start (car boundaries))
+         (end (cdr boundaries)))
+    (unless (and (pos-visible-in-window-p start) (pos-visible-in-window-p end))
+      (let* ((start-line (line-number-at-pos start))
+             (end-line (line-number-at-pos end))
+             (center-line (/ (window-height) 2)))
+        (recenter (max 0 (- center-line (/ (- end-line start-line) 2))))))))
+
 (defun ep-next-entry-recenter (&optional n)
   "Move point to the beginning of the next entry. If the current
 entry is the last one in the buffer, leave `point' unchanged. If
@@ -689,15 +700,7 @@ non-nil argument, skip N entries forwards."
   (let ((n (or n 1)))
     (when (ep-ep-next-entry)
       (dotimes (dummy (- n 1)) (ep-ep-next-entry))
-      (let* ((entry (ep-ep-entry-at-point))
-             (boundaries (ep-ep-entry-boundaries entry))
-             (start (car boundaries))
-             (end (cdr boundaries)))
-        (unless (and (pos-visible-in-window-p start) (pos-visible-in-window-p end))
-          (let* ((start-line (line-number-at-pos start))
-                 (end-line (line-number-at-pos end))
-                 (center-line (/ (window-height) 2)))
-            (recenter (max 0 (- center-line (/ (- end-line start-line) 2))))))))))
+      (ep-ep-recenter))))
 
 (defun ep-previous-entry-recenter (&optional n)
   "Move point to the beginning of the previous entry. If the
@@ -708,15 +711,7 @@ point. With a non-nil argument, skip N entries backwards."
   (let ((n (or n 1)))
     (when (ep-ep-previous-entry)
       (dotimes (dummy (- n 1)) (ep-ep-previous-entry))
-      (let* ((entry (ep-ep-entry-at-point))
-             (boundaries (ep-ep-entry-boundaries entry))
-             (start (car boundaries))
-             (end (cdr boundaries)))
-        (unless (and (pos-visible-in-window-p start) (pos-visible-in-window-p end))
-          (let* ((start-line (line-number-at-pos start))
-                 (end-line (line-number-at-pos end))
-                 (center-line (/ (window-height) 2)))
-            (recenter (max 0 (- center-line (/ (- end-line start-line) 2))))))))))
+      (ep-ep-recenter))))
 
 (defun ep-scroll-up ()
   (interactive)
