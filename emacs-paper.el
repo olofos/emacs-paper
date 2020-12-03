@@ -1715,6 +1715,37 @@ non-nil, replace any exisitng fields."
     (unless found-entry
       (message "No entry without journal field found"))))
 
+(defun ep-next-entry-with-arxiv-pdf ()
+  "Go to the next arXiv entry with a downloaded PDF."
+  (interactive)
+
+  (let (found-entry)
+    (while (and (not found-entry) (ep-ep-next-entry))
+      (let* ((entry (ep-ep-entry-at-point)))
+        (when (and
+               (ep-ep-field-value "archivePrefix" entry)
+               (equal (ep-ep-field-value "archivePrefix" entry) "arXiv")
+               (ep-ep-field-value "eprint" entry)
+               (ep-ep-field-value "=key=" entry)
+               ep-ep-pdf-list
+               (ep-ep-alist-get-value (ep-ep-field-value "=key=" entry) ep-ep-pdf-list))
+          (ep-ep-recenter)
+          (setq found-entry t))))
+    (unless found-entry
+      (message "No arXiv entry with a PDF found"))
+    found-entry))
+
+(defun ep-cleanup-arxiv-pdfs ()
+  (interactive)
+
+  (while (ep-next-entry-with-arxiv-pdf)
+    (ep-ep-highlight-entry)
+    (let* ((entry (ep-ep-entry-at-point)))
+      (when (y-or-n-p (concat "Delete PDF for " (ep-ep-field-value "=key=" entry)))
+        (ep-delete-pdf entry)))))
+
+
+
 
 ;; Searching locally and in Inpire
 
