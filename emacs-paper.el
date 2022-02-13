@@ -76,7 +76,12 @@
   :type 'color
   :group 'emacs-paper)
 
-(defcustom ep-inspire-url "http://old.inspirehep.net/search?p="
+(defcustom ep-inspire-url "http://inspirehep.net/api/literature?format=bibtex&q="
+  "Base URL used for Inspire queries."
+  :type 'string
+  :group 'emacs-paper)
+
+(defcustom ep-inspire-goto-url "http://inspirehep.net/literature?q="
   "Base URL used for Inspire queries."
   :type 'string
   :group 'emacs-paper)
@@ -1324,7 +1329,7 @@ MARK is 'unmark, unmark ENTRY."
   (interactive "P")
   (let* ((query (ep-ep-inspire-entry-query)))
     (if query
-        (browse-url (concat ep-inspire-url query))
+        (browse-url (concat ep-inspire-goto-url query))
       (message "There is no preprint number for this entry. Trying using DOI.")
       (ep-goto-doi))))
 
@@ -1653,7 +1658,7 @@ entries are extracted."
 (defun ep-ep-inspire-query-entries (query)
   "Perform a Inpire QUERY. Return a list of entries."
   (save-current-buffer
-    (message (concat "Querying Inspire for '" query "'"))
+    (message (concat "Querying Inspire for '" query "' (" (ep-ep-inspire-url query) ")"))
     (let ((query-buf (ep-ep-url-retrieve-synchronously (ep-ep-inspire-url query))))
       (when query-buf
         (ep-ep-inspire-extract-entries query-buf)))))
