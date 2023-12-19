@@ -1945,6 +1945,9 @@ cons-cells (BibTeX-field . regexp)."
   (call-process-shell-command (format ep-open-pdf-cmd (expand-file-name filename)) nil 0 nil))
 
 (defun ep-goto-pdf (overwrite)
+  "Open PDF file from `ep-pdf-dir', if available, or try to download it.
+
+If an argument is given, always download the file."
   (interactive "P")
   (let* ((entry ep-ep-current-entry)
          (key (ep-ep-alist-get-value "=key=" entry))
