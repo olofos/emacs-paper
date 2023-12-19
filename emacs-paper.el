@@ -1602,7 +1602,7 @@ from the last DAYS days."
         ((string-match " " key)
          (concat "FIND+" (replace-regexp-in-string " " "+" key)))
         ((ep-ep-string-match-full "[0-9]\\{4\\}\\.[0-9]\\{4,5\\}" key) 
-         (concat "FIND+EPRINT+ARXIV:" key))        ; Match new arxiv identifier
+         (concat "FIND+EPRINT+" key))        ; Match new arxiv identifier
         ((ep-ep-string-match-full "[0-9]\\{7\\}" key) 
          (concat "FIND+EPRINT+" ep-arxiv-default-category "/" key)) ; Match old arxiv identifier
         ((ep-ep-string-match-full "[a-z\\-]+/[0-9]\\{7\\}" key) 
