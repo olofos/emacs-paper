@@ -1766,7 +1766,7 @@ non-nil, replace any exisitng fields."
              (entries (ep-ep-filter-entries (ep-ep-extract-entries ep-ep-main-buffer) ep-query)))
         (ep-ep-format-entries entries))
       (ep-ep-insert-sub-heading "Inpire results"))
-    (message (concat "Looking up '" inspire-query "' at Inpire"))
+    (message (concat "Looking up '" inspire-query "' at Inpire" " (" url ")"))
     (url-retrieve url 'ep-ep-inspire-query-callback (list (current-buffer)))))
 
 (defun ep-ep-search-parse-query (query)
@@ -1877,6 +1877,7 @@ cons-cells (BibTeX-field . regexp)."
 
 (defun ep-ep-url-retrieve-synchronously (url)
   "Work around `url-retrieve-synchronously` beeing really slow on my Mac."
+  (message (concat "Retriving " url))
   (let ((temp-file-name (concat ep-temp-dir (make-temp-name "ep-")))
         (buffer (generate-new-buffer (generate-new-buffer-name (concat " *" url "*")))))
     (when (ep-ep-url-retrieve-file url temp-file-name)
