@@ -4,6 +4,7 @@ Emacs Paper is a major mode for browsing and editing BibTeX files, with support 
 
 The intended workflow for Emacs Paper is that one keeps a main BibTeX files with all references. Emacs Paper can then be used to import entries to this file.
 
+
 ## Installation
 
 
@@ -16,6 +17,9 @@ Download `emacs-paper.el` to a suitable location and load it using `load`. To ge
 (set-variable 'ep-pdf-dir "path/to/pdfs/")
 (set-variable 'ep-pdf-file "path/to/pdfs/papers.xml")
 ```
+
+Emacs Paper uses the package [deferred.el](https://github.com/kiwanami/emacs-deferred) to download PDF files in the background, if available. deferred.el can be installed from [MELPA](https://melpa.org/) by package.el.
+
 
 ## Usage
 
