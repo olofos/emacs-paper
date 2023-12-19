@@ -1344,7 +1344,7 @@ MARK is 'unmark, unmark ENTRY."
       (message "There is no DOI for the current entry."))))
 
 (defun ep-inspire-latex-entry (&optional entry)
-  "Copy the LaTeX entry from Inspire correpsonding to ENTRY to the
+  "Copy the LaTeX entry from Inspire corresponding to ENTRY to the
 kill ring. Default to the current entry."
   (interactive "P")
   (save-excursion
@@ -1838,7 +1838,7 @@ cons-cells (BibTeX-field . regexp)."
   (ep-ep-update-entry ep-ep-current-entry))
 
 (defun ep-ep-fix-note (entry)
-  "Rmove the \"* Temporary entry *\" note from Inspire entries."
+  "Remove the \"* Temporary entry *\" note from Inspire entries."
   (when (and (ep-ep-alist-get-value "note" entry)
              (string-equal (ep-ep-alist-get-value "note" entry) "* Temporary entry *"))
     (ep-ep-alist-set "note" entry nil)))
@@ -1962,7 +1962,7 @@ cons-cells (BibTeX-field . regexp)."
             (if (not (and ep-pdf-file ep-pdf-dir (equal (current-buffer) ep-ep-main-buffer)))
                 (browse-url url)
 
-                                        ; Download pdf in background using 'deffered.el'
+                                        ; Download pdf in background using 'deferred.el'
               (if (fboundp 'deferred:$)
                   (lexical-let ((filename filename)
                                 (entry entry)
